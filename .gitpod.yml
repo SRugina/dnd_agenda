@@ -4,3 +4,6 @@ vscode:
 
 image:
   file: .gitpod.dockerfile
+
+tasks:
+  - init: diesel setup --database-url="postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda" && diesel migration run --database-url="postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda"
