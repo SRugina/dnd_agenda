@@ -1,0 +1,6 @@
+vscode:
+  extensions:
+    - rust-lang.rust@0.6.3:HqKSYOrvQWB/7AqVWuok/A==
+
+image:
+  file: .gitpod.dockerfile
