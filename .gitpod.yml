@@ -1,11 +1,20 @@
-vscode:
-  extensions:
-    - rust-lang.rust@0.6.3:HqKSYOrvQWB/7AqVWuok/A==
-
 image:
   file: .gitpod.dockerfile
 
 tasks:
   - init: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain nightly -y && rustup default nightly && rustup component add rls rust-analysis rust-src && cargo install diesel_cli --no-default-features --features postgres && psql -f init.sql && diesel setup --database-url="postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda" && diesel migration run --database-url="postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda"
-  # - command: rustup default nightly && cargo build
-  # - command: env DATABASE_URL="postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda" && diesel setup
+# - command: rustup default nightly && cargo build
+# - command: env DATABASE_URL="postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda" && diesel setup
+
+vscode:
+  extensions:
+    - rust-lang.rust@0.6.3:HqKSYOrvQWB/7AqVWuok/A==
+    - vadimcn.vscode-lldb@1.3.0:5SSNh9XNjK9UXopNGRO+3g==
+    - webfreak.debug@0.23.1:Ycnfjah6UEwOaCuIYGIxaA==
+    - hdevalke.rust-test-lens@0.1.2:32npWbgfjloArYPNn2A6/w==
+    - serayuzgur.crates@0.4.3:TVUm+aTfDTxwe4J6sawe/Q==
+    - dunstontc.vscode-rust-syntax@0.0.32:N7uoHzYi5pvMUyJtzlU1+g==
+    - be5invis.toml@0.4.0:a7EFEKQe5YoU2zZjNbvGQQ==
+    - bungcip.better-toml@0.3.2:3QfgGxxYtGHfJKQU7H0nEw==
+    - Hirse.vscode-ungit@2.1.0:f8pqjstqBGN972JWKlLd7A==
+    - octref.vetur@0.22.3:Mwv282XMv00pVVOQeZ6Ngg==
