@@ -1,5 +1,6 @@
 use crate::schema::users;
 use diesel::prelude::*;
+use serde::Serialize;
 
 use bcrypt::{hash, DEFAULT_COST};
 
@@ -14,6 +15,7 @@ pub struct User {
     pub id: i32,
     pub name: String,
     pub email: String,
+    #[serde(skip_serializing)]
     pub password: String,
 }
 
@@ -27,31 +29,27 @@ pub struct InsertableUser {
 }
 
 impl InsertableUser {
-    fn hashed_user(user: InsertableUser) -> InsertableUser {
-        let hashed_password = match hash(user.password, DEFAULT_COST) {
-            Ok(hashed) => hashed,
-            Err(_) => panic!("Error hashing"),
-        };
-        InsertableUser {
-            name: user.name,
-            email: user.email,
-            password: hashed_password,
-        }
-    }
-
     pub fn create(user: InsertableUser, connection: &PgConnection) -> ApiResponse {
+        match hash(user.password, DEFAULT_COST) {
+            Ok(hashed) => user.password = hashed,
+            Err(_) => ApiResponse {
+                json: json!({"success": false, "error": "error hashing", "data": null}),
+                status: Status::InternalServerError,
+            },
+        };
         let result = diesel::insert_into(users::table)
-            .values(&InsertableUser::hashed_user(user))
-            .execute(connection);
+            .values(&user)
+            .get_result::<User>(connection);
+            .map_err(Into::into)
         match result {
-            Ok(_) => ApiResponse {
-                json: json!({"success": true, "error": null}),
+            Ok(User) => ApiResponse {
+                json: json!({"success": true, "error": null, "data": User}),
                 status: Status::Ok,
             },
             Err(error) => {
                 println!("Cannot create the recipe: {:?}", error);
                 ApiResponse {
-                    json: json!({"success": false, "error": error}),
+                    json: json!({"success": false, "error": error.to_string() }),
                     status: Status::UnprocessableEntity,
                 }
             }
