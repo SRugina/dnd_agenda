@@ -6,6 +6,6 @@ image:
   file: .gitpod.dockerfile
 
 tasks:
-  - init: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain nightly -y && rustup default nightly && cargo install diesel_cli --no-default-features --features postgres && psql -f init.sql && diesel setup --database-url="postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda" && diesel migration run --database-url="postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda"
-  - command: rustup default nightly && cargo build
-  - command: env DATABASE_URL="postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda" && diesel setup
+  - init: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain nightly -y && rustup default nightly && rustup component add rls rust-analysis rust-src && cargo install diesel_cli --no-default-features --features postgres && psql -f init.sql && diesel setup --database-url="postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda" && diesel migration run --database-url="postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda"
+  # - command: rustup default nightly && cargo build
+  # - command: env DATABASE_URL="postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda" && diesel setup

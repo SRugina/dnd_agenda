@@ -1,6 +1,5 @@
 use crate::schema::users;
 use diesel::prelude::*;
-use serde::Serialize;
 
 use bcrypt::{hash, DEFAULT_COST};
 
@@ -29,10 +28,10 @@ pub struct InsertableUser {
 }
 
 impl InsertableUser {
-    pub fn create(user: InsertableUser, connection: &PgConnection) -> ApiResponse {
+    pub fn create(mut user: InsertableUser, connection: &PgConnection) -> ApiResponse {
         match hash(user.password, DEFAULT_COST) {
             Ok(hashed) => user.password = hashed,
-            Err(_) => ApiResponse {
+            Err(_) => return ApiResponse {
                 json: json!({"success": false, "error": "error hashing", "data": null}),
                 status: Status::InternalServerError,
             },
@@ -40,11 +39,10 @@ impl InsertableUser {
         let result = diesel::insert_into(users::table)
             .values(&user)
             .get_result::<User>(connection);
-            .map_err(Into::into)
         match result {
-            Ok(User) => ApiResponse {
-                json: json!({"success": true, "error": null, "data": User}),
-                status: Status::Ok,
+            Ok(user) => ApiResponse {
+                json: json!({"success": true, "error": null, "data": user}),
+                status: Status::Created,
             },
             Err(error) => {
                 println!("Cannot create the recipe: {:?}", error);
