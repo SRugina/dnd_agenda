@@ -19,7 +19,7 @@ fn main() {
     rocket::ignite()
         .attach(database::DnDAgendaDB::fairing())
         .mount(
-            "/api/v1/users", 
+            "/api/v1/users",
             routes![
             user::controller::read,
             user::controller::create

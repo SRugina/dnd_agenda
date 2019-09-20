@@ -12,47 +12,10 @@ pub mod controller;
 #[derive(AsChangeset, Serialize, Deserialize, Queryable)]
 pub struct User {
     pub id: i32,
-    pub name: String,
+    pub username: String,
     pub email: String,
     #[serde(skip_serializing)]
     pub password: String,
-}
-
-// our mass assignable properties
-#[table_name = "users"]
-#[derive(Serialize, Deserialize, Insertable)]
-pub struct InsertableUser {
-    pub name: String,
-    pub email: String,
-    pub password: String,
-}
-
-impl InsertableUser {
-    pub fn create(mut user: InsertableUser, connection: &PgConnection) -> ApiResponse {
-        match hash(user.password, DEFAULT_COST) {
-            Ok(hashed) => user.password = hashed,
-            Err(_) => return ApiResponse {
-                json: json!({"success": false, "error": "error hashing", "data": null}),
-                status: Status::InternalServerError,
-            },
-        };
-        let result = diesel::insert_into(users::table)
-            .values(&user)
-            .get_result::<User>(connection);
-        match result {
-            Ok(user) => ApiResponse {
-                json: json!({"success": true, "error": null, "data": user}),
-                status: Status::Created,
-            },
-            Err(error) => {
-                println!("Cannot create the recipe: {:?}", error);
-                ApiResponse {
-                    json: json!({"success": false, "error": error.to_string() }),
-                    status: Status::UnprocessableEntity,
-                }
-            }
-        }
-    }
 }
 
 impl User {
@@ -76,3 +39,42 @@ impl User {
             .is_ok()
     }
 }
+
+#[table_name = "users"]
+#[derive(Serialize, Deserialize, Insertable)]
+pub struct InsertableUser {
+    pub username: String,
+    pub email: String,
+    pub password: String,
+}
+
+impl InsertableUser {
+    pub fn create(mut user: InsertableUser, connection: &PgConnection) -> ApiResponse {
+        match hash(user.password, DEFAULT_COST) {
+            Ok(hashed) => user.password = hashed,
+            Err(_) => return ApiResponse {
+                json: json!({"error": "error hashing"}),
+                status: Status::InternalServerError,
+            },
+        };
+
+        let result = diesel::insert_into(users::table)
+            .values(&user)
+            .get_result::<User>(connection);
+
+        match result {
+            Ok(user) => return ApiResponse {
+                json: json!({"data": user}),
+                status: Status::Created,
+            },
+            Err(error) => {
+                println!("Cannot create the recipe: {:?}", error);
+                return ApiResponse {
+                    json: json!({"error": error.to_string() }),
+                    status: Status::UnprocessableEntity,
+                }
+            }
+        }
+    }
+}
+
