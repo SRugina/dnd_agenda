@@ -1,10 +1,13 @@
 use crate::schema::users;
 use diesel::prelude::*;
 
-use bcrypt::{hash, DEFAULT_COST};
+use bcrypt::{hash, verify, DEFAULT_COST};
 
 use crate::api::ApiResponse;
 use rocket::http::Status;
+
+use crate::api::Auth;
+use chrono::{Duration, Utc};
 
 pub mod controller;
 
@@ -18,7 +21,67 @@ pub struct User {
     pub password: String,
 }
 
+#[derive(Serialize)]
+pub struct UserAuth<'a> {
+    username: &'a str,
+    email: &'a str,
+    token: String,
+}
+
 impl User {
+    pub fn to_user_auth(&self) -> UserAuth {
+        let exp = Utc::now() + Duration::days(60); // TODO: move to config
+        let token = Auth {
+            id: self.id,
+            username: self.username.clone(),
+            exp: exp.timestamp(),
+        }
+        .token();
+
+        UserAuth {
+            username: &self.username,
+            email: &self.email,
+            token,
+        }
+    }
+    pub fn login(email: &str, password: &str, connection: &PgConnection) -> ApiResponse {
+        match users::table
+            .filter(users::email.eq(email))
+            .get_result::<User>(connection)
+        {
+            Ok(user) => match verify(password, &user.password) {
+                Ok(password_matches) => {
+                    if password_matches {
+                        return ApiResponse {
+                            json: json!({ "user": user.to_user_auth() }),
+                            status: Status::Accepted,
+                        };
+                    } else {
+                        return ApiResponse {
+                            json: json!({ "error": "incorrect email/password" }),
+                            status: Status::Unauthorized,
+                        };
+                    }
+                }
+                Err(error) => {
+                    println!("Error: {}", error);
+                    return ApiResponse {
+                        json: json!({"error": "verifying failed" }),
+                        status: Status::InternalServerError,
+                    };
+                }
+            },
+            Err(error) => {
+                // the email was wrong.(not found)
+                println!("Error: {}", error);
+                return ApiResponse {
+                    json: json!({"error": "incorrect email/password" }),
+                    status: Status::Unauthorized,
+                };
+            }
+        };
+    }
+
     pub fn read(connection: &PgConnection) -> Vec<User> {
         users::table
             .order(users::id)
@@ -52,10 +115,12 @@ impl InsertableUser {
     pub fn create(mut user: InsertableUser, connection: &PgConnection) -> ApiResponse {
         match hash(user.password, DEFAULT_COST) {
             Ok(hashed) => user.password = hashed,
-            Err(_) => return ApiResponse {
-                json: json!({"error": "error hashing"}),
-                status: Status::InternalServerError,
-            },
+            Err(_) => {
+                return ApiResponse {
+                    json: json!({"error": "error hashing"}),
+                    status: Status::InternalServerError,
+                }
+            }
         };
 
         let result = diesel::insert_into(users::table)
@@ -63,18 +128,19 @@ impl InsertableUser {
             .get_result::<User>(connection);
 
         match result {
-            Ok(user) => return ApiResponse {
-                json: json!({"data": user}),
-                status: Status::Created,
-            },
+            Ok(user) => {
+                return ApiResponse {
+                    json: json!({ "data": user }),
+                    status: Status::Created,
+                }
+            }
             Err(error) => {
-                println!("Cannot create the recipe: {:?}", error);
+                println!("Cannot create user: {:?}", error);
                 return ApiResponse {
                     json: json!({"error": error.to_string() }),
                     status: Status::UnprocessableEntity,
-                }
+                };
             }
-        }
+        };
     }
 }
-

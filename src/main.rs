@@ -9,9 +9,13 @@ extern crate serde_derive;
 #[macro_use]
 extern crate diesel;
 
+extern crate frank_jwt;
+
 mod api;
 mod database;
 mod schema;
+
+mod config;
 
 mod user;
 
@@ -20,10 +24,7 @@ fn main() {
         .attach(database::DnDAgendaDB::fairing())
         .mount(
             "/api/v1/users",
-            routes![
-            user::controller::read,
-            user::controller::create
-            ]
+            routes![user::controller::create, user::controller::login,],
         )
         .launch();
 }
