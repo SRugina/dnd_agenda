@@ -9,7 +9,7 @@ use rocket::http::Status;
 use crate::api::Auth;
 use chrono::{Duration, Utc};
 
-pub mod controller;
+pub mod routes;
 
 #[table_name = "users"]
 #[derive(AsChangeset, Serialize, Deserialize, Queryable)]
@@ -82,11 +82,15 @@ impl User {
         };
     }
 
-    pub fn read(connection: &PgConnection) -> Vec<User> {
-        users::table
-            .order(users::id)
-            .load::<User>(connection)
-            .unwrap()
+    pub fn read(connection: &PgConnection) -> ApiResponse {
+        // users::table
+        //     .order(users::id)
+        //     .load::<User>(connection)
+        //     .unwrap()
+        return ApiResponse {
+            json: json!({"yup": "indeed" }),
+            status: Status::Ok,
+        };
     }
 
     pub fn update(id: i32, user: User, connection: &PgConnection) -> bool {
@@ -111,6 +115,29 @@ pub struct InsertableUser {
     pub password: String,
 }
 
+#[derive(Debug)]
+pub enum UserCreationError {
+    DuplicatedEmail,
+    DuplicatedUsername,
+}
+
+impl From<diesel::result::Error> for UserCreationError {
+    fn from(err: diesel::result::Error) -> UserCreationError {
+        if let diesel::result::Error::DatabaseError(
+            diesel::result::DatabaseErrorKind::UniqueViolation,
+            info,
+        ) = &err
+        {
+            match info.constraint_name() {
+                Some("users_username_key") => return UserCreationError::DuplicatedUsername,
+                Some("users_email_key") => return UserCreationError::DuplicatedEmail,
+                _ => {}
+            }
+        }
+        panic!("Error creating user: {:?}", err)
+    }
+}
+
 impl InsertableUser {
     pub fn create(mut user: InsertableUser, connection: &PgConnection) -> ApiResponse {
         match hash(user.password, DEFAULT_COST) {
@@ -123,21 +150,26 @@ impl InsertableUser {
             }
         };
 
-        let result = diesel::insert_into(users::table)
+        let result: Result<User, UserCreationError> = diesel::insert_into(users::table)
             .values(&user)
-            .get_result::<User>(connection);
+            .get_result::<User>(connection)
+            .map_err(Into::into);
 
         match result {
             Ok(user) => {
                 return ApiResponse {
-                    json: json!({ "data": user }),
+                    json: json!({ "user": user }),
                     status: Status::Created,
                 }
             }
             Err(error) => {
-                println!("Cannot create user: {:?}", error);
+                let field = match error {
+                    UserCreationError::DuplicatedEmail => "email",
+                    UserCreationError::DuplicatedUsername => "username",
+                };
+                println!("Cannot create user: {:#?}", error);
                 return ApiResponse {
-                    json: json!({"error": error.to_string() }),
+                    json: json!({"error": format!("{} already taken", field) }),
                     status: Status::UnprocessableEntity,
                 };
             }

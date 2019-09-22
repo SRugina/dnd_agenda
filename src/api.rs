@@ -49,7 +49,7 @@ impl Auth {
 }
 
 impl<'a, 'r> FromRequest<'a, 'r> for Auth {
-    type Error = ();
+    type Error = JsonValue;
 
     /// Extract Auth token from the "Authorization" header.
     ///
@@ -57,9 +57,10 @@ impl<'a, 'r> FromRequest<'a, 'r> for Auth {
     /// Handlers with Option<Auth> will be called with None.
     fn from_request(request: &'a Request<'r>) -> request::Outcome<Auth, Self::Error> {
         if let Some(auth) = extract_auth_from_request(request) {
+            // ie assignment successful
             Outcome::Success(auth)
         } else {
-            Outcome::Failure((Status::Forbidden, ()))
+            Outcome::Failure((Status::Unauthorized, json!({"error": "unauthorised"})))
         }
     }
 }
