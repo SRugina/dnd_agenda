@@ -3,6 +3,7 @@ use rocket::request::{self, FromRequest, Request};
 use rocket::response;
 use rocket::response::{Responder, Response};
 use rocket_contrib::json::JsonValue;
+use validator::{Validate, ValidationError, ValidationErrors};
 
 #[derive(Debug)]
 pub struct ApiResponse {
@@ -96,4 +97,47 @@ fn decode_token(token: &str) -> Option<Auth> {
             eprintln!("Auth decode error: {:?}", err);
             None
         })
+}
+
+pub struct FieldValidator {
+    errors: ValidationErrors,
+}
+
+impl Default for FieldValidator {
+    fn default() -> Self {
+        Self {
+            errors: ValidationErrors::new(),
+        }
+    }
+}
+
+impl FieldValidator {
+    pub fn validate<T: Validate>(model: &T) -> Self {
+        Self {
+            errors: model.validate().err().unwrap_or_else(ValidationErrors::new),
+        }
+    }
+
+    /// Convenience method to trigger early returns with ? operator.
+    pub fn check(self) -> Result<(), ApiResponse> {
+        if self.errors.is_empty() {
+            Ok(())
+        } else {
+            Err(ApiResponse {
+                json: json!({ "errors": self.errors }),
+                status: Status::UnprocessableEntity,
+            })
+        }
+    }
+
+    pub fn extract<T>(&mut self, field_name: &'static str, field: Option<T>) -> T
+    where
+        T: Default,
+    {
+        field.unwrap_or_else(|| {
+            self.errors
+                .add(field_name, ValidationError::new("can't be blank"));
+            T::default()
+        })
+    }
 }

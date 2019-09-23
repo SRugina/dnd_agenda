@@ -9,6 +9,10 @@ use rocket::http::Status;
 use crate::api::Auth;
 use chrono::{Duration, Utc};
 
+use validator::Validate;
+
+use crate::api::FieldValidator;
+
 pub mod routes;
 
 #[table_name = "users"]
@@ -108,10 +112,13 @@ impl User {
 }
 
 #[table_name = "users"]
-#[derive(Serialize, Deserialize, Insertable)]
+#[derive(Serialize, Deserialize, Insertable, Validate)]
 pub struct InsertableUser {
+    #[validate(length(min = 1))]
     pub username: String,
+    #[validate(email)]
     pub email: String,
+    #[validate(length(min = 8))]
     pub password: String,
 }
 
@@ -140,6 +147,16 @@ impl From<diesel::result::Error> for UserCreationError {
 
 impl InsertableUser {
     pub fn create(mut user: InsertableUser, connection: &PgConnection) -> ApiResponse {
+
+        let new_user = user.user;
+
+        let mut extractor = FieldValidator::validate(&new_user);
+        let username = extractor.extract("username", new_user.username);
+        let email = extractor.extract("email", new_user.email);
+        let password = extractor.extract("password", new_user.password);
+
+        extractor.check()?;
+
         match hash(user.password, DEFAULT_COST) {
             Ok(hashed) => user.password = hashed,
             Err(_) => {
@@ -151,7 +168,7 @@ impl InsertableUser {
         };
 
         let result: Result<User, UserCreationError> = diesel::insert_into(users::table)
-            .values(&user)
+            .values(&user.user)
             .get_result::<User>(connection)
             .map_err(Into::into);
 
