@@ -8,9 +8,9 @@ use rocket::http::{ContentType, Header, Status};
 use rocket::local::{Client, LocalResponse};
 use serde_json::Value;
 
-pub const USERNAME: &'static str = "testre123";
-pub const EMAIL: &'static str = "tester123@test.com";
-pub const PASSWORD: &'static str = "blahblahbl";
+pub const USERNAME: &str = "testre123";
+pub const EMAIL: &str = "tester123@test.com";
+pub const PASSWORD: &str = "blahblahbl";
 
 /// Utility macro for turning `json!` into string.
 #[macro_export]

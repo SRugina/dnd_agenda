@@ -9,10 +9,6 @@ use rocket::http::Status;
 use crate::api::Auth;
 use chrono::{Duration, Utc};
 
-use validator::Validate;
-
-use crate::api::FieldValidator;
-
 pub mod routes;
 
 #[table_name = "users"]
@@ -56,34 +52,34 @@ impl User {
             Ok(user) => match verify(password, &user.password) {
                 Ok(password_matches) => {
                     if password_matches {
-                        return ApiResponse {
+                        ApiResponse {
                             json: json!({ "user": user.to_user_auth() }),
                             status: Status::Accepted,
-                        };
+                        }
                     } else {
-                        return ApiResponse {
+                        ApiResponse {
                             json: json!({ "error": "incorrect email/password" }),
                             status: Status::Unauthorized,
-                        };
+                        }
                     }
                 }
                 Err(error) => {
                     println!("Error: {}", error);
-                    return ApiResponse {
+                    ApiResponse {
                         json: json!({"error": "verifying failed" }),
                         status: Status::InternalServerError,
-                    };
+                    }
                 }
             },
             Err(error) => {
                 // the email was wrong.(not found)
                 println!("Error: {}", error);
-                return ApiResponse {
+                ApiResponse {
                     json: json!({"error": "incorrect email/password" }),
                     status: Status::Unauthorized,
-                };
+                }
             }
-        };
+        }
     }
 
     pub fn read(connection: &PgConnection) -> ApiResponse {
@@ -91,10 +87,10 @@ impl User {
         //     .order(users::id)
         //     .load::<User>(connection)
         //     .unwrap()
-        return ApiResponse {
+        ApiResponse {
             json: json!({"yup": "indeed" }),
             status: Status::Ok,
-        };
+        }
     }
 
     pub fn update(id: i32, user: User, connection: &PgConnection) -> bool {
@@ -112,13 +108,10 @@ impl User {
 }
 
 #[table_name = "users"]
-#[derive(Serialize, Deserialize, Insertable, Validate)]
+#[derive(Serialize, Deserialize, Insertable)]
 pub struct InsertableUser {
-    #[validate(length(min = 1))]
     pub username: String,
-    #[validate(email)]
     pub email: String,
-    #[validate(length(min = 8))]
     pub password: String,
 }
 
@@ -147,16 +140,6 @@ impl From<diesel::result::Error> for UserCreationError {
 
 impl InsertableUser {
     pub fn create(mut user: InsertableUser, connection: &PgConnection) -> ApiResponse {
-
-        let new_user = user.user;
-
-        let mut extractor = FieldValidator::validate(&new_user);
-        let username = extractor.extract("username", new_user.username);
-        let email = extractor.extract("email", new_user.email);
-        let password = extractor.extract("password", new_user.password);
-
-        extractor.check()?;
-
         match hash(user.password, DEFAULT_COST) {
             Ok(hashed) => user.password = hashed,
             Err(_) => {
@@ -168,28 +151,26 @@ impl InsertableUser {
         };
 
         let result: Result<User, UserCreationError> = diesel::insert_into(users::table)
-            .values(&user.user)
+            .values(user)
             .get_result::<User>(connection)
             .map_err(Into::into);
 
         match result {
-            Ok(user) => {
-                return ApiResponse {
-                    json: json!({ "user": user }),
-                    status: Status::Created,
-                }
-            }
+            Ok(user) => ApiResponse {
+                json: json!({ "user": user }),
+                status: Status::Created,
+            },
             Err(error) => {
                 let field = match error {
                     UserCreationError::DuplicatedEmail => "email",
                     UserCreationError::DuplicatedUsername => "username",
                 };
                 println!("Cannot create user: {:#?}", error);
-                return ApiResponse {
-                    json: json!({"error": format!("{} already taken", field) }),
+                ApiResponse {
+                    json: json!({ "error": format!("{} already taken", field) }),
                     status: Status::UnprocessableEntity,
-                };
+                }
             }
-        };
+        }
     }
 }

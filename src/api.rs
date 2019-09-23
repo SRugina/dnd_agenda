@@ -1,8 +1,9 @@
 use rocket::http::{ContentType, Status};
 use rocket::request::{self, FromRequest, Request};
-use rocket::response;
-use rocket::response::{Responder, Response};
+use rocket::response::{self, Responder, Response};
+use rocket_contrib::json::Json;
 use rocket_contrib::json::JsonValue;
+use std::collections::HashMap;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 #[derive(Debug)]
@@ -13,7 +14,7 @@ pub struct ApiResponse {
 
 impl<'r> Responder<'r> for ApiResponse {
     fn respond_to(self, req: &Request) -> response::Result<'r> {
-        Response::build_from(self.json.respond_to(&req).unwrap())
+        Response::build_from(self.json.respond_to(req).unwrap())
             .status(self.status)
             .header(ContentType::JSON)
             .ok()
@@ -118,13 +119,21 @@ impl FieldValidator {
         }
     }
 
-    /// Convenience method to trigger early returns with ? operator.
     pub fn check(self) -> Result<(), ApiResponse> {
         if self.errors.is_empty() {
             Ok(())
         } else {
+            let errors = self
+                .errors
+                .field_errors()
+                .into_iter()
+                .map(|(field, errors)| {
+                    let messages = errors.clone().into_iter().map(|err| (err.code, err.message)).collect();
+                    (field, messages)
+                })
+                .collect::<HashMap<_, Vec<_>>>();
             Err(ApiResponse {
-                json: json!({ "errors": self.errors }),
+                json: json!({ "errors": errors }),
                 status: Status::UnprocessableEntity,
             })
         }

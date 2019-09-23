@@ -1,2 +1,2 @@
-pub const SECRET: &'static str = "secret123";
-pub const TOKEN_PREFIX: &'static str = "Token ";
+pub const SECRET: &str = "secret123";
+pub const TOKEN_PREFIX: &str = "Token ";
