@@ -13,7 +13,7 @@ fn test_register() {
     let response = &mut client
         .post("/api/v1/users")
         .header(ContentType::JSON)
-        .body(json_string!({ "username": USERNAME, "email": EMAIL, "password": PASSWORD }))
+        .body(json_string!({ "user": { "username": USERNAME, "email": EMAIL, "password": PASSWORD } }))
         .dispatch();
 
     let status = response.status();

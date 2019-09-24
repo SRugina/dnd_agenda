@@ -134,7 +134,7 @@ impl From<diesel::result::Error> for UserCreationError {
                 _ => {}
             }
         }
-        panic!("Error creating user: {:?}", err)
+        println!("Error creating user: {:?}", err)
     }
 }
 
