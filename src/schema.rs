@@ -5,7 +5,14 @@ table! {
         title -> Text,
         description -> Text,
         dm -> Int4,
-        date -> Text,
+        session_date -> Text,
+    }
+}
+
+table! {
+    sessions_users (session_id, user_id) {
+        session_id -> Int4,
+        user_id -> Int4,
     }
 }
 
@@ -21,8 +28,11 @@ table! {
 }
 
 joinable!(sessions -> users (dm));
+joinable!(sessions_users -> sessions (session_id));
+joinable!(sessions_users -> users (user_id));
 
 allow_tables_to_appear_in_same_query!(
     sessions,
+    sessions_users,
     users,
 );

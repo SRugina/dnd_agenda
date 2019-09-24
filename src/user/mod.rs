@@ -14,7 +14,7 @@ type Url = String;
 pub mod routes;
 
 #[table_name = "users"]
-#[derive(AsChangeset, Serialize, Deserialize, Queryable)]
+#[derive(Identifiable, AsChangeset, Serialize, Deserialize, Queryable)]
 pub struct User {
     pub id: i32,
     pub username: String,

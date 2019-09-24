@@ -22,6 +22,7 @@ mod schema;
 mod config;
 
 mod user;
+mod session;
 
 pub fn rocket() -> rocket::Rocket {
     rocket::ignite()
