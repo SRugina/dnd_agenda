@@ -3,7 +3,7 @@ image:
 
 tasks:
   - init: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain nightly -y && rustup default nightly && rustup component add rls rust-analysis rust-src && cargo install diesel_cli --no-default-features --features postgres && psql -f init.sql && diesel setup --database-url="postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda" && diesel migration run --database-url="postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda"
-  - command: echo " you must run 'rustup default nightly && rustup component add rls rust-analysis rust-src && psql -f init.sql && diesel migration run && cargo build' "
+  - command: echo " you must run 'rustup default nightly && rustup component add rls rust-analysis rust-src && psql -f init.sql && diesel migration run --database-url="postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda" && cargo build' "
 
 vscode:
   extensions:

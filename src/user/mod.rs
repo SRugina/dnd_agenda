@@ -9,6 +9,8 @@ use rocket::http::Status;
 use crate::api::Auth;
 use chrono::{Duration, Utc};
 
+type Url = String;
+
 pub mod routes;
 
 #[table_name = "users"]
@@ -17,6 +19,8 @@ pub struct User {
     pub id: i32,
     pub username: String,
     pub email: String,
+    pub bio: Option<String>,
+    pub image: Option<Url>,
     #[serde(skip_serializing)]
     pub password: String,
 }
@@ -25,8 +29,18 @@ pub struct User {
 pub struct UserAuth<'a> {
     username: &'a str,
     email: &'a str,
+    bio: Option<&'a str>,
+    image: Option<&'a str>,
     token: String,
 }
+
+// #[derive(Serialize)]
+// pub struct Profile {
+//     username: String,
+//     bio: Option<String>,
+//     image: Option<String>,
+//     following: bool,
+// }
 
 impl User {
     pub fn to_user_auth(&self) -> UserAuth {
@@ -41,9 +55,21 @@ impl User {
         UserAuth {
             username: &self.username,
             email: &self.email,
+            bio: self.bio.as_ref().map(String::as_str),
+            image: self.image.as_ref().map(String::as_str),
             token,
         }
     }
+
+    // pub fn to_profile(self, following: bool) -> Profile {
+    //     Profile {
+    //         username: self.username,
+    //         bio: self.bio,
+    //         image: self.image,
+    //         following,
+    //     }
+    // }
+
     pub fn login(email: &str, password: &str, connection: &PgConnection) -> ApiResponse {
         match users::table
             .filter(users::email.eq(email))
@@ -83,12 +109,12 @@ impl User {
     }
 
     pub fn read(connection: &PgConnection) -> ApiResponse {
-        // users::table
-        //     .order(users::id)
-        //     .load::<User>(connection)
-        //     .unwrap()
+        let users = users::table
+            .order(users::id)
+            .load::<User>(connection)
+            .unwrap();
         ApiResponse {
-            json: json!({"yup": "indeed" }),
+            json: json!({ "users": users }),
             status: Status::Ok,
         }
     }
@@ -134,7 +160,7 @@ impl From<diesel::result::Error> for UserCreationError {
                 _ => {}
             }
         }
-        println!("Error creating user: {:?}", err)
+        panic!("Error creating user: {:?}", err)
     }
 }
 
@@ -167,7 +193,7 @@ impl InsertableUser {
                 };
                 println!("Cannot create user: {:#?}", error);
                 ApiResponse {
-                    json: json!({ "error": format!("{} already taken", field) }),
+                    json: json!({ "error": format!("{} has already been taken", field) }),
                     status: Status::UnprocessableEntity,
                 }
             }

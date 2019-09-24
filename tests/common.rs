@@ -8,7 +8,7 @@ use rocket::http::{ContentType, Header, Status};
 use rocket::local::{Client, LocalResponse};
 use serde_json::Value;
 
-pub const USERNAME: &str = "testre123";
+pub const USERNAME: &str = "tester123";
 pub const EMAIL: &str = "tester123@test.com";
 pub const PASSWORD: &str = "blahblahbl";
 
@@ -59,7 +59,7 @@ fn try_login(client: &Client) -> Option<Token> {
         .body(json_string!({ "user": { "email": EMAIL, "password": PASSWORD } }))
         .dispatch();
 
-    if response.status() == Status::UnprocessableEntity {
+    if response.status() == Status::Unauthorized {
         return None;
     }
 
@@ -78,11 +78,11 @@ pub fn register(client: &Client, username: &str, email: &str, password: &str) {
     let response = client
         .post("/api/v1/users")
         .header(ContentType::JSON)
-        .body(json_string!( {"username": username, "email": email, "password": password} ))
+        .body(json_string!({ "user": { "username": username, "email": email, "password": password } }))
         .dispatch();
 
     match response.status() {
-        Status::Ok | Status::UnprocessableEntity => {} // ok,
+        Status::Created | Status::UnprocessableEntity => {} // ok,
         status => panic!("Registration failed: {}", status),
     }
 }

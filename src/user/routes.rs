@@ -15,14 +15,13 @@ use validator::Validate;
 #[get("/")]
 pub fn get_all(auth: Result<Auth, JsonValue>, connection: DnDAgendaDB) -> ApiResponse {
     match auth {
-        Ok(auth) => {
-            println!("Auth: {:#?}", auth);
+        Ok(_auth) => {
             user::User::read(&connection)
-        },
+        }
         Err(json_error) => ApiResponse {
             json: json_error,
             status: Status::Unauthorized,
-        }
+        },
     }
 }
 
@@ -85,8 +84,8 @@ pub struct LoginUser {
 
 #[derive(Deserialize)]
 struct LoginUserData {
-    email: String,
-    password: String,
+    email: Option<String>,
+    password: Option<String>,
 }
 
 #[post("/login", format = "application/json", data = "<user>")]
@@ -94,7 +93,17 @@ pub fn login(user: Result<Json<LoginUser>, JsonError>, connection: DnDAgendaDB) 
     match user {
         Ok(json_user) => {
             let user_details = json_user.into_inner().user;
-            user::User::login(&user_details.email, &user_details.password, &connection)
+            let mut extractor = FieldValidator::default();
+            let email = extractor.extract("email", user_details.email);
+            let password = extractor.extract("password", user_details.password);
+            let check = extractor.check();
+
+            match check {
+                Ok(_) => {
+                    user::User::login(&email, &password, &connection)
+                }
+                Err(response) => response,
+            }
         }
         Err(json_error) => match json_error {
             JsonError::Parse(_req, err) => ApiResponse {

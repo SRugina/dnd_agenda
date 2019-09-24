@@ -1,7 +1,6 @@
 use rocket::http::{ContentType, Status};
 use rocket::request::{self, FromRequest, Request};
 use rocket::response::{self, Responder, Response};
-use rocket_contrib::json::Json;
 use rocket_contrib::json::JsonValue;
 use std::collections::HashMap;
 use validator::{Validate, ValidationError, ValidationErrors};
