@@ -5,11 +5,13 @@ use diesel::prelude::*;
 
 use crate::user::User;
 
+pub mod routes;
+
 use crate::api::ApiResponse;
 use rocket::http::Status;
 
 #[table_name = "sessions"]
-#[derive(Identifiable, AsChangeset, Serialize, Deserialize, Queryable)]
+#[derive(Debug, Identifiable, AsChangeset, Serialize, Deserialize, Queryable)]
 pub struct Session {
     pub id: i32,
     pub slug: String,
@@ -41,33 +43,47 @@ There are two variants doing that:
     The first variant is only on query, but may not match your required data layout if you want to do that for all users,
     The second variant allows to group the results for each user, using the build in associations api.
 
-For inserting (because this was also ask in the stackoverflow question): Yes this requires three separate inserts. We do not try to hide that because in the end it's a user choice how to handle for example data consistency in case of an failed insert there. (And yes, just using a transaction is a common choice) 
+For inserting (because this was also ask in the stackoverflow question): Yes this requires three separate inserts. We do not try to hide that because in the end it's a user choice how to handle for example data consistency in case of an failed insert there. (And yes, just using a transaction is a common choice)
 */
 
+#[table_name = "sessions"]
+#[derive(Serialize, Deserialize, Insertable)]
+pub struct InsertableSession {
+    pub slug: String,
+    pub title: String,
+    pub description: String,
+    pub dm: i32,
+    pub session_date: String,
+}
+
+#[table_name = "sessions_users"]
+#[derive(Serialize, Deserialize, Insertable)]
+pub struct InsertableSessionsUsers {
+    pub session_id: i32,
+    pub user_id: i32,
+}
+
 impl Session {
-    pub fn get_for_user(user_id: i32, connection: &PgConnection) -> ApiResponse {
-        let sessions = users::table
-            .inner_join(sessions_users::table.inner_join(sessions::table))
-            .filter(users::id.eq(user_id))
-            .select(sessions::all_columns)
-            .load::<Session>(connection)
+    pub fn insert(connection: &PgConnection) {
+        let new_session = InsertableSession {
+            slug: "epic-session".to_string(),
+            title: "epic session".to_string(),
+            description: "the most epic of sessions".to_string(),
+            dm: 1,
+            session_date: "25-09-2019".to_string(),
+        };
+        let session = diesel::insert_into(sessions::table)
+            .values(&new_session)
+            .get_result::<Session>(connection)
             .unwrap();
 
-        let user = users::table
-            .find(user_id)
-            .first::<User>(connection)
-            .unwrap();
-        let alternate_sessions = SessionUser::belonging_to(&user)
-            .inner_join(sessions::table)
-            .select(sessions::all_columns)
-            .load::<Session>(connection)
-            .unwrap();
-        println!("Sessions: {:#?}", sessions);
-        println!("Alternate Sessions: {:#?}", alternate_sessions);
+        let new_sess_user = InsertableSessionsUsers {
+            session_id: session.id,
+            user_id: 1,
+        };
 
-        ApiResponse {
-            json: json!({ "sessions": sessions, "alt": alternate_sessions }),
-            status: Status::Ok,
-        }
+        diesel::insert_into(sessions_users::table)
+            .values(&new_sess_user)
+            .get_result::<SessionUser>(connection);
     }
 }

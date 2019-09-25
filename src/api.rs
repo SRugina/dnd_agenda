@@ -85,7 +85,7 @@ fn extract_token_from_header(header: &str) -> Option<&str> {
 /// Decode token into `Auth` struct. If any error is encountered, log it
 /// an return None.
 fn decode_token(token: &str) -> Option<Auth> {
-    jwt::decode(token, &config::SECRET.to_string(), jwt::Algorithm::HS256)
+    jwt::decode(token, &config::SECRET.to_string(), jwt::Algorithm::HS256, &jwt::ValidationOptions::default())
         .map(|(_, payload)| {
             serde_json::from_value::<Auth>(payload)
                 .map_err(|err| {
@@ -127,7 +127,11 @@ impl FieldValidator {
                 .field_errors()
                 .into_iter()
                 .map(|(field, errors)| {
-                    let messages = errors.clone().into_iter().map(|err| (err.code, err.message)).collect();
+                    let messages = errors
+                        .clone()
+                        .into_iter()
+                        .map(|err| (err.code, err.message))
+                        .collect();
                     (field, messages)
                 })
                 .collect::<HashMap<_, Vec<_>>>();

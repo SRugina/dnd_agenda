@@ -15,9 +15,21 @@ use validator::Validate;
 #[get("/")]
 pub fn get_all(auth: Result<Auth, JsonValue>, connection: DnDAgendaDB) -> ApiResponse {
     match auth {
-        Ok(_auth) => {
+        Ok(auth) => {
+            println!("{:#?}", auth);
             user::User::read(&connection)
         }
+        Err(json_error) => ApiResponse {
+            json: json_error,
+            status: Status::Unauthorized,
+        },
+    }
+}
+
+#[get("/sessions")]
+pub fn get_sessions(auth: Result<Auth, JsonValue>, connection: DnDAgendaDB) -> ApiResponse {
+    match auth {
+        Ok(auth) => user::User::read_sessions(auth.id, &connection),
         Err(json_error) => ApiResponse {
             json: json_error,
             status: Status::Unauthorized,
@@ -99,9 +111,7 @@ pub fn login(user: Result<Json<LoginUser>, JsonError>, connection: DnDAgendaDB) 
             let check = extractor.check();
 
             match check {
-                Ok(_) => {
-                    user::User::login(&email, &password, &connection)
-                }
+                Ok(_) => user::User::login(&email, &password, &connection),
                 Err(response) => response,
             }
         }

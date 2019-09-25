@@ -1,3 +1,4 @@
+use crate::schema::sessions;
 use crate::schema::users;
 use diesel::prelude::*;
 
@@ -8,6 +9,8 @@ use rocket::http::Status;
 
 use crate::api::Auth;
 use chrono::{Duration, Utc};
+
+use crate::session;
 
 type Url = String;
 
@@ -44,7 +47,7 @@ pub struct UserAuth<'a> {
 
 impl User {
     pub fn to_user_auth(&self) -> UserAuth {
-        let exp = Utc::now() + Duration::days(60); // TODO: move to config
+        let exp = Utc::now() + Duration::hours(1);
         let token = Auth {
             id: self.id,
             username: self.username.clone(),
@@ -109,13 +112,43 @@ impl User {
     }
 
     pub fn read(connection: &PgConnection) -> ApiResponse {
-        let users = users::table
-            .order(users::id)
-            .load::<User>(connection)
-            .unwrap();
-        ApiResponse {
-            json: json!({ "users": users }),
-            status: Status::Ok,
+        match users::table.order(users::id).load::<User>(connection) {
+            Ok(users) => ApiResponse {
+                json: json!({ "users": users }),
+                status: Status::Ok,
+            },
+            Err(error) => {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": error.to_string() }),
+                    status: Status::Unauthorized,
+                }
+            }
+        }
+    }
+
+    pub fn read_sessions(user_id: i32, connection: &PgConnection) -> ApiResponse {
+        match connection.build_transaction().run(|| {
+            let user = users::table
+                .find(user_id)
+                .first::<User>(connection)
+                .unwrap();
+            session::SessionUser::belonging_to(&user)
+                .inner_join(sessions::table)
+                .select(sessions::all_columns)
+                .load::<session::Session>(connection)
+        }) {
+            Ok(sessions) => ApiResponse {
+                json: json!({ "sessions": sessions }),
+                status: Status::Ok,
+            },
+            Err(error) => {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": error.to_string() }),
+                    status: Status::Unauthorized,
+                }
+            }
         }
     }
 

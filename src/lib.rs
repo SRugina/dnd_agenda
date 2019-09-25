@@ -21,8 +21,8 @@ mod schema;
 
 mod config;
 
-mod user;
 mod session;
+mod user;
 
 pub fn rocket() -> rocket::Rocket {
     rocket::ignite()
@@ -31,7 +31,8 @@ pub fn rocket() -> rocket::Rocket {
             routes![
                 user::routes::create,
                 user::routes::login,
-                user::routes::get_all
+                user::routes::get_all,
+                user::routes::get_sessions
             ],
         )
         .attach(database::DnDAgendaDB::fairing())
