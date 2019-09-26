@@ -26,10 +26,10 @@ pub fn get_all(auth: Result<Auth, JsonValue>, connection: DnDAgendaDB) -> ApiRes
     }
 }
 
-#[get("/sessions")]
-pub fn get_sessions(auth: Result<Auth, JsonValue>, connection: DnDAgendaDB) -> ApiResponse {
+#[get("/<user_id>/sessions")]
+pub fn get_sessions(auth: Result<Auth, JsonValue>, user_id: i32, connection: DnDAgendaDB) -> ApiResponse {
     match auth {
-        Ok(auth) => user::User::read_sessions(auth.id, &connection),
+        Ok(_auth) => user::User::read_sessions(user_id, &connection),
         Err(json_error) => ApiResponse {
             json: json_error,
             status: Status::Unauthorized,

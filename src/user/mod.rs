@@ -128,16 +128,35 @@ impl User {
     }
 
     pub fn read_sessions(user_id: i32, connection: &PgConnection) -> ApiResponse {
-        match connection.build_transaction().run(|| {
-            let user = users::table
+            match users::table
                 .find(user_id)
-                .first::<User>(connection)
-                .unwrap();
-            session::SessionUser::belonging_to(&user)
+                .first::<User>(connection) {
+                    Ok(user) => {
+                        match session::SessionUser::belonging_to(&user)
                 .inner_join(sessions::table)
                 .select(sessions::all_columns)
-                .load::<session::Session>(connection)
-        }) {
+                .load::<session::Session>(connection) {
+                    Ok(sessions) => ApiResponse {
+                json: json!({ "sessions": sessions }),
+                status: Status::Ok,
+            }
+                    Err(error) => {
+                        println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": error.to_string() }),
+                    status: Status::Unauthorized,
+                }
+                    }
+                }
+                    }
+                    Err(error) => {
+println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": error.to_string() }),
+                    status: Status::Unauthorized,
+                }
+                    }
+                }
             Ok(sessions) => ApiResponse {
                 json: json!({ "sessions": sessions }),
                 status: Status::Ok,
