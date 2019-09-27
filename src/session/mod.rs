@@ -12,9 +12,6 @@ pub mod routes;
 use crate::api::ApiResponse;
 use rocket::http::Status;
 
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
-use slug;
-
 #[table_name = "sessions"]
 #[derive(Debug, Identifiable, AsChangeset, Serialize, Deserialize, Queryable)]
 pub struct Session {
@@ -107,17 +104,4 @@ impl Session {
             }
         }
     }
-}
-
-pub fn slugify(title: &str) -> String {
-    if cfg!(feature = "random-suffix") {
-        format!("{}-{}", slug::slugify(title), generate_suffix(6))
-    } else {
-        slug::slugify(title)
-    }
-}
-
-fn generate_suffix(len: usize) -> String {
-    let mut rng = thread_rng();
-    (0..len).map(|_| rng.sample(Alphanumeric)).collect()
 }

@@ -153,12 +153,3 @@ impl FieldValidator {
         })
     }
 }
-
-// pub fn validate_session_date(session_date: &str) -> Result<(), ValidationError> {
-//     if  {
-//         // the value of the username will automatically be added later
-//         return Err(ValidationError::new("terrible_username"));
-//     }
-
-//     Ok(())
-// }
