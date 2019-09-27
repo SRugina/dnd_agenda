@@ -5,7 +5,8 @@ table! {
         title -> Text,
         description -> Text,
         dm -> Int4,
-        session_date -> Text,
+        session_date -> Timestamptz,
+        colour -> Text,
     }
 }
 

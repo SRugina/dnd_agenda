@@ -5,10 +5,15 @@ use diesel::prelude::*;
 
 use crate::user::User;
 
+use chrono::{DateTime, Utc};
+
 pub mod routes;
 
 use crate::api::ApiResponse;
 use rocket::http::Status;
+
+use rand::{distributions::Alphanumeric, thread_rng, Rng};
+use slug;
 
 #[table_name = "sessions"]
 #[derive(Debug, Identifiable, AsChangeset, Serialize, Deserialize, Queryable)]
@@ -18,7 +23,8 @@ pub struct Session {
     pub title: String,
     pub description: String,
     pub dm: i32,
-    pub session_date: String,
+    pub session_date: DateTime<Utc>,
+    pub colour: String,
 }
 
 #[derive(Identifiable, Queryable, Debug, Associations, Serialize, Deserialize)]
@@ -53,7 +59,8 @@ pub struct InsertableSession {
     pub title: String,
     pub description: String,
     pub dm: i32,
-    pub session_date: String,
+    pub session_date: DateTime<Utc>,
+    pub colour: String,
 }
 
 #[table_name = "sessions_users"]
@@ -64,26 +71,53 @@ pub struct InsertableSessionsUsers {
 }
 
 impl Session {
-    pub fn insert(connection: &PgConnection) {
-        let new_session = InsertableSession {
-            slug: "epic-session".to_string(),
-            title: "epic session".to_string(),
-            description: "the most epic of sessions".to_string(),
-            dm: 1,
-            session_date: "25-09-2019".to_string(),
-        };
-        let session = diesel::insert_into(sessions::table)
-            .values(&new_session)
-            .get_result::<Session>(connection)
-            .unwrap();
+    pub fn create(
+        session: InsertableSession,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> ApiResponse {
+        match connection
+            .build_transaction()
+            .run::<Session, diesel::result::Error, _>(|| {
+                let new_session = diesel::insert_into(sessions::table)
+                    .values(&session)
+                    .get_result::<Session>(connection)?;
 
-        let new_sess_user = InsertableSessionsUsers {
-            session_id: session.id,
-            user_id: 1,
-        };
+                let new_sessions_users = &InsertableSessionsUsers {
+                    session_id: new_session.id,
+                    user_id: user_id,
+                };
 
-        diesel::insert_into(sessions_users::table)
-            .values(&new_sess_user)
-            .get_result::<SessionUser>(connection);
+                diesel::insert_into(sessions_users::table)
+                    .values(new_sessions_users)
+                    .get_result::<SessionUser>(connection)?;
+
+                Ok(new_session)
+            }) {
+            Ok(new_session) => ApiResponse {
+                json: json!({ "session": new_session }),
+                status: Status::Created,
+            },
+            Err(error) => {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": error.to_string() }),
+                    status: Status::Unauthorized,
+                }
+            }
+        }
     }
+}
+
+pub fn slugify(title: &str) -> String {
+    if cfg!(feature = "random-suffix") {
+        format!("{}-{}", slug::slugify(title), generate_suffix(6))
+    } else {
+        slug::slugify(title)
+    }
+}
+
+fn generate_suffix(len: usize) -> String {
+    let mut rng = thread_rng();
+    (0..len).map(|_| rng.sample(Alphanumeric)).collect()
 }

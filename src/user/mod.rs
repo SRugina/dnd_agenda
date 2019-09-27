@@ -126,41 +126,43 @@ impl User {
             }
         }
     }
-
-    pub fn read_sessions(user_id: i32, connection: &PgConnection) -> ApiResponse {
-            match users::table
-                .find(user_id)
-                .first::<User>(connection) {
-                    Ok(user) => {
-                        match session::SessionUser::belonging_to(&user)
-                .inner_join(sessions::table)
-                .select(sessions::all_columns)
-                .load::<session::Session>(connection) {
-                    Ok(sessions) => ApiResponse {
-                json: json!({ "sessions": sessions }),
-                status: Status::Ok,
-            }
-                    Err(error) => {
-                        println!("Error: {:#?}", error);
-                ApiResponse {
-                    json: json!({"error": error.to_string() }),
-                    status: Status::Unauthorized,
-                }
-                    }
-                }
-                    }
-                    Err(error) => {
-println!("Error: {:#?}", error);
-                ApiResponse {
-                    json: json!({"error": error.to_string() }),
-                    status: Status::Unauthorized,
-                }
-                    }
-                }
-            Ok(sessions) => ApiResponse {
-                json: json!({ "sessions": sessions }),
+    pub fn find(user_id: i32, connection: &PgConnection) -> ApiResponse {
+        match users::table.find(user_id).first::<User>(connection) {
+            Ok(user) => ApiResponse {
+                json: json!({ "user": user }),
                 status: Status::Ok,
             },
+            Err(error) => {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": error.to_string() }),
+                    status: Status::Unauthorized,
+                }
+            }
+        }
+    }
+
+    pub fn read_sessions(user_id: i32, connection: &PgConnection) -> ApiResponse {
+        match users::table.find(user_id).first::<User>(connection) {
+            Ok(user) => {
+                match session::SessionUser::belonging_to(&user)
+                    .inner_join(sessions::table)
+                    .select(sessions::all_columns)
+                    .load::<session::Session>(connection)
+                {
+                    Ok(sessions) => ApiResponse {
+                        json: json!({ "sessions": sessions }),
+                        status: Status::Ok,
+                    },
+                    Err(error) => {
+                        println!("Error: {:#?}", error);
+                        ApiResponse {
+                            json: json!({"error": error.to_string() }),
+                            status: Status::Unauthorized,
+                        }
+                    }
+                }
+            }
             Err(error) => {
                 println!("Error: {:#?}", error);
                 ApiResponse {
