@@ -33,8 +33,18 @@ pub fn rocket() -> rocket::Rocket {
             routes![
                 user::routes::create,
                 user::routes::login,
+                user::routes::get_user,
                 user::routes::get_all,
                 user::routes::get_sessions
+            ],
+        )
+        .mount(
+            "/api/v1/sessions",
+            routes![
+                session::routes::create,
+                session::routes::get_session,
+                session::routes::get_all,
+                session::routes::get_users
             ],
         )
         .attach(database::DnDAgendaDB::fairing())

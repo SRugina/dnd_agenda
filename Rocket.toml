@@ -1,7 +1,2 @@
 [global.databases]
 dnd_agenda = { url = "postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda" }
-
-[global]
-DATE_FORMAT = "%Y-%m-%dT%H:%M:%S%.3fZ"
-TOKEN_PREFIX = "Token "
-SECRET = ""

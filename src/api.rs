@@ -5,6 +5,8 @@ use rocket_contrib::json::JsonValue;
 use std::collections::HashMap;
 use validator::{Validate, ValidationError, ValidationErrors};
 
+use crate::user;
+
 #[derive(Debug)]
 pub struct ApiResponse {
     pub json: JsonValue,
@@ -85,18 +87,23 @@ fn extract_token_from_header(header: &str) -> Option<&str> {
 /// Decode token into `Auth` struct. If any error is encountered, log it
 /// an return None.
 fn decode_token(token: &str) -> Option<Auth> {
-    jwt::decode(token, &config::SECRET.to_string(), jwt::Algorithm::HS256, &jwt::ValidationOptions::default())
-        .map(|(_, payload)| {
-            serde_json::from_value::<Auth>(payload)
-                .map_err(|err| {
-                    eprintln!("Auth serde decode error: {:?}", err);
-                })
-                .ok()
-        })
-        .unwrap_or_else(|err| {
-            eprintln!("Auth decode error: {:?}", err);
-            None
-        })
+    jwt::decode(
+        token,
+        &config::SECRET.to_string(),
+        jwt::Algorithm::HS256,
+        &jwt::ValidationOptions::default(),
+    )
+    .map(|(_, payload)| {
+        serde_json::from_value::<Auth>(payload)
+            .map_err(|err| {
+                eprintln!("Auth serde decode error: {:?}", err);
+            })
+            .ok()
+    })
+    .unwrap_or_else(|err| {
+        eprintln!("Auth decode error: {:?}", err);
+        None
+    })
 }
 
 pub struct FieldValidator {
@@ -127,12 +134,8 @@ impl FieldValidator {
                 .field_errors()
                 .into_iter()
                 .map(|(field, errors)| {
-                    let messages = errors
-                        .clone()
-                        .into_iter()
-                        .map(|err| (err.code, err.message))
-                        .collect();
-                    (field, messages)
+                    let codes = errors.clone().into_iter().map(|err| err.code).collect();
+                    (field, codes)
                 })
                 .collect::<HashMap<_, Vec<_>>>();
             Err(ApiResponse {
@@ -154,12 +157,26 @@ impl FieldValidator {
     }
 }
 
-
-fn check_colour(colour: &str) -> Result<(), ValidationError> {
-    if session_date == "xXxShad0wxXx" {
-        // the value of the username will automatically be added later
-        return Err(ValidationError::new("terrible_username"));
+pub fn validate_colour(colour: &str) -> Result<(), ValidationError> {
+    if !(colour == "red"
+        || colour == "blue"
+        || colour == "green"
+        || colour == "purple"
+        || colour == "yellow")
+    {
+        return Err(ValidationError::new(
+            "colour can only be red, blue, green, purple, or yellow",
+        ));
     }
 
     Ok(())
+}
+
+pub fn validate_user_exists(user_id: i32) -> Result<(), ValidationError> {
+    match user::User::find(user_id, &crate::database::establish_connection()) {
+        Ok(_user) => Ok(()),
+        Err(_response) => Err(ValidationError::new(
+            "DM can only be a valid (existing) user",
+        )),
+    }
 }

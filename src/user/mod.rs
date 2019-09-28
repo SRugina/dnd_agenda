@@ -73,7 +73,11 @@ impl User {
     //     }
     // }
 
-    pub fn login(email: &str, password: &str, connection: &PgConnection) -> ApiResponse {
+    pub fn login(
+        email: &str,
+        password: &str,
+        connection: &PgConnection,
+    ) -> Result<User, ApiResponse> {
         match users::table
             .filter(users::email.eq(email))
             .get_result::<User>(connection)
@@ -81,68 +85,63 @@ impl User {
             Ok(user) => match verify(password, &user.password) {
                 Ok(password_matches) => {
                     if password_matches {
-                        ApiResponse {
-                            json: json!({ "user": user.to_user_auth() }),
-                            status: Status::Accepted,
-                        }
+                        Ok(user)
                     } else {
-                        ApiResponse {
+                        Err(ApiResponse {
                             json: json!({ "error": "incorrect email/password" }),
                             status: Status::Unauthorized,
-                        }
+                        })
                     }
                 }
                 Err(error) => {
                     println!("Error: {}", error);
-                    ApiResponse {
+                    Err(ApiResponse {
                         json: json!({"error": "verifying failed" }),
                         status: Status::InternalServerError,
-                    }
+                    })
                 }
             },
             Err(error) => {
                 // the email was wrong.(not found)
                 println!("Error: {}", error);
-                ApiResponse {
+                Err(ApiResponse {
                     json: json!({"error": "incorrect email/password" }),
                     status: Status::Unauthorized,
-                }
+                })
             }
         }
     }
 
-    pub fn read(connection: &PgConnection) -> ApiResponse {
+    pub fn read(connection: &PgConnection) -> Result<Vec<User>, ApiResponse> {
         match users::table.order(users::id).load::<User>(connection) {
-            Ok(users) => ApiResponse {
-                json: json!({ "users": users }),
-                status: Status::Ok,
-            },
+            Ok(users) => Ok(users),
             Err(error) => {
                 println!("Error: {:#?}", error);
-                ApiResponse {
-                    json: json!({"error": error.to_string() }),
-                    status: Status::Unauthorized,
-                }
-            }
-        }
-    }
-    pub fn find(user_id: i32, connection: &PgConnection) -> ApiResponse {
-        match users::table.find(user_id).first::<User>(connection) {
-            Ok(user) => ApiResponse {
-                json: json!({ "user": user }),
-                status: Status::Ok,
-            },
-            Err(error) => {
-                println!("Error: {:#?}", error);
-                ApiResponse {
-                    json: json!({"error": error.to_string() }),
-                    status: Status::Unauthorized,
-                }
+                Err(ApiResponse {
+                    json: json!({"error": "Users not found" }),
+                    status: Status::NotFound,
+                })
             }
         }
     }
 
-    pub fn read_sessions(user_id: i32, connection: &PgConnection) -> ApiResponse {
+    pub fn find(user_id: i32, connection: &PgConnection) -> Result<User, ApiResponse> {
+        match users::table.find(user_id).first::<User>(connection) {
+            Ok(user) => Ok(user),
+            Err(error) => {
+                println!("Error: {:#?}", error);
+                Err(ApiResponse {
+                    json: json!({"error": "User not found" }),
+                    status: Status::NotFound,
+                })
+            }
+        }
+    }
+
+    pub fn read_sessions(
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<Vec<session::Session>, ApiResponse> {
         match users::table.find(user_id).first::<User>(connection) {
             Ok(user) => {
                 match session::SessionUser::belonging_to(&user)
@@ -150,41 +149,38 @@ impl User {
                     .select(sessions::all_columns)
                     .load::<session::Session>(connection)
                 {
-                    Ok(sessions) => ApiResponse {
-                        json: json!({ "sessions": sessions }),
-                        status: Status::Ok,
-                    },
+                    Ok(sessions) => Ok(sessions),
                     Err(error) => {
                         println!("Error: {:#?}", error);
-                        ApiResponse {
-                            json: json!({"error": error.to_string() }),
-                            status: Status::Unauthorized,
-                        }
+                        Err(ApiResponse {
+                            json: json!({"error": "Sessions not found" }),
+                            status: Status::NotFound,
+                        })
                     }
                 }
             }
             Err(error) => {
                 println!("Error: {:#?}", error);
-                ApiResponse {
-                    json: json!({"error": error.to_string() }),
-                    status: Status::Unauthorized,
-                }
+                Err(ApiResponse {
+                    json: json!({"error": "User not found" }),
+                    status: Status::NotFound,
+                })
             }
         }
     }
 
-    pub fn update(id: i32, user: User, connection: &PgConnection) -> bool {
-        diesel::update(users::table.find(id))
-            .set(&user)
-            .execute(connection)
-            .is_ok()
-    }
+    // pub fn update(id: i32, user: User, connection: &PgConnection) -> bool {
+    //     diesel::update(users::table.find(id))
+    //         .set(&user)
+    //         .execute(connection)
+    //         .is_ok()
+    // }
 
-    pub fn delete(id: i32, connection: &PgConnection) -> bool {
-        diesel::delete(users::table.find(id))
-            .execute(connection)
-            .is_ok()
-    }
+    // pub fn delete(id: i32, connection: &PgConnection) -> bool {
+    //     diesel::delete(users::table.find(id))
+    //         .execute(connection)
+    //         .is_ok()
+    // }
 }
 
 #[table_name = "users"]
@@ -219,14 +215,18 @@ impl From<diesel::result::Error> for UserCreationError {
 }
 
 impl InsertableUser {
-    pub fn create(mut user: InsertableUser, connection: &PgConnection) -> ApiResponse {
+    pub fn create(
+        mut user: InsertableUser,
+        connection: &PgConnection,
+    ) -> Result<User, ApiResponse> {
         match hash(user.password, DEFAULT_COST) {
             Ok(hashed) => user.password = hashed,
-            Err(_) => {
-                return ApiResponse {
+            Err(error) => {
+                println!("Cannot hash password: {:#?}", error);
+                return Err(ApiResponse {
                     json: json!({"error": "error hashing"}),
                     status: Status::InternalServerError,
-                }
+                });
             }
         };
 
@@ -236,20 +236,17 @@ impl InsertableUser {
             .map_err(Into::into);
 
         match result {
-            Ok(user) => ApiResponse {
-                json: json!({ "user": user }),
-                status: Status::Created,
-            },
+            Ok(user) => Ok(user),
             Err(error) => {
                 let field = match error {
                     UserCreationError::DuplicatedEmail => "email",
                     UserCreationError::DuplicatedUsername => "username",
                 };
                 println!("Cannot create user: {:#?}", error);
-                ApiResponse {
+                Err(ApiResponse {
                     json: json!({ "error": format!("{} has already been taken", field) }),
                     status: Status::UnprocessableEntity,
-                }
+                })
             }
         }
     }

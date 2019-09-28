@@ -24,6 +24,65 @@ pub struct Session {
     pub colour: String,
 }
 
+impl Session {
+    pub fn read(connection: &PgConnection) -> Result<Vec<Session>, ApiResponse> {
+        match sessions::table.order(sessions::id).load::<Session>(connection) {
+            Ok(sessions) => Ok(sessions),
+            Err(error) => {
+                println!("Error: {:#?}", error);
+                Err(ApiResponse {
+                    json: json!({"error": "Sessions not found" }),
+                    status: Status::NotFound,
+                })
+            }
+        }
+    }
+
+    pub fn find(session_id: i32, connection: &PgConnection) -> Result<Session, ApiResponse> {
+        match sessions::table.find(session_id).first::<Session>(connection) {
+            Ok(session) => Ok(session),
+            Err(error) => {
+                println!("Error: {:#?}", error);
+                Err(ApiResponse {
+                    json: json!({"error": "Session not found" }),
+                    status: Status::NotFound,
+                })
+            }
+        }
+    }
+
+    pub fn read_users(
+        session_id: i32,
+        connection: &PgConnection,
+    ) -> Result<Vec<User>, ApiResponse> {
+        match sessions::table.find(session_id).first::<Session>(connection) {
+            Ok(session) => {
+                match SessionUser::belonging_to(&session)
+                    .inner_join(users::table)
+                    .select(users::all_columns)
+                    .load::<User>(connection)
+                {
+                    Ok(users) => Ok(users),
+                    Err(error) => {
+                        println!("Error: {:#?}", error);
+                        Err(ApiResponse {
+                            json: json!({"error": "Users not found" }),
+                            status: Status::NotFound,
+                        })
+                    }
+                }
+            }
+            Err(error) => {
+                println!("Error: {:#?}", error);
+                Err(ApiResponse {
+                    json: json!({"error": "Session not found" }),
+                    status: Status::NotFound,
+                })
+            }
+        }
+    }
+}
+
 #[derive(Identifiable, Queryable, Debug, Associations, Serialize, Deserialize)]
 #[belongs_to(Session)]
 #[belongs_to(User)]
@@ -67,12 +126,11 @@ pub struct InsertableSessionsUsers {
     pub user_id: i32,
 }
 
-impl Session {
+impl InsertableSession {
     pub fn create(
         session: InsertableSession,
-        user_id: i32,
         connection: &PgConnection,
-    ) -> ApiResponse {
+    ) -> Result<Session, ApiResponse> {
         match connection
             .build_transaction()
             .run::<Session, diesel::result::Error, _>(|| {
@@ -82,7 +140,7 @@ impl Session {
 
                 let new_sessions_users = &InsertableSessionsUsers {
                     session_id: new_session.id,
-                    user_id: user_id,
+                    user_id: new_session.dm,
                 };
 
                 diesel::insert_into(sessions_users::table)
@@ -91,16 +149,13 @@ impl Session {
 
                 Ok(new_session)
             }) {
-            Ok(new_session) => ApiResponse {
-                json: json!({ "session": new_session }),
-                status: Status::Created,
-            },
+            Ok(session) => Ok(session),
             Err(error) => {
                 println!("Error: {:#?}", error);
-                ApiResponse {
-                    json: json!({"error": error.to_string() }),
-                    status: Status::Unauthorized,
-                }
+                Err(ApiResponse {
+                    json: json!({"error": "Could not create session" }),
+                    status: Status::InternalServerError,
+                })
             }
         }
     }
