@@ -153,3 +153,13 @@ impl FieldValidator {
         })
     }
 }
+
+
+fn check_colour(colour: &str) -> Result<(), ValidationError> {
+    if session_date == "xXxShad0wxXx" {
+        // the value of the username will automatically be added later
+        return Err(ValidationError::new("terrible_username"));
+    }
+
+    Ok(())
+}

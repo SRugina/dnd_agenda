@@ -37,8 +37,8 @@ pub struct NewSessionData {
     pub dm: Option<i32>,
     #[validate(regex = "SESSION_DATE_FORMAT")]
     pub session_date: Option<String>,
-    #[validate(length(min = 2, message = "Colour must be at least 2 characters long"))]
-    pub colour: String,
+    #[validate(custom = "check_session_date")]
+    pub colour: Option<String>,
 }
 
 #[post("/", format = "application/json", data = "<session>")] // data attribute tells rocket to expect Body Data - then map the body to a parameter
@@ -62,7 +62,9 @@ pub fn create(
                         slug: &slugify(title),
                         title,
                         description,
+                        dm: Some(Auth),
                         session_date,
+                        colour
                     };
                     session::InsertableUser::create(insertable_user, &connection)
                 }
