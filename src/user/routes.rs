@@ -13,19 +13,21 @@ use crate::api::FieldValidator;
 use validator::Validate;
 
 #[get("/")]
-pub fn get_all(auth: Result<Auth, JsonValue>, connection: DnDAgendaDB) -> ApiResponse {
+pub fn get_all(
+    auth: Result<Auth, JsonValue>,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
     match auth {
-        Ok(_auth) => match user::User::read(&connection) {
-            Ok(users) => ApiResponse {
-                json: json!({ "users": users }),
+        Ok(_auth) => user::User::read(&connection)
+            .map(|user| ApiResponse {
+                json: json!({ "user": user }),
                 status: Status::Ok,
-            },
-            Err(response) => response,
-        },
-        Err(auth_error) => ApiResponse {
+            })
+            .map_err(|response| response),
+        Err(auth_error) => Err(ApiResponse {
             json: auth_error,
             status: Status::Unauthorized,
-        },
+        }),
     }
 }
 
@@ -34,19 +36,18 @@ pub fn get_user(
     auth: Result<Auth, JsonValue>,
     user_id: i32,
     connection: DnDAgendaDB,
-) -> ApiResponse {
+) -> Result<ApiResponse, ApiResponse> {
     match auth {
-        Ok(_auth) => match user::User::find(user_id, &connection) {
-            Ok(user) => ApiResponse {
+        Ok(_auth) => user::User::find(user_id, &connection)
+            .map(|user| ApiResponse {
                 json: json!({ "user": user }),
                 status: Status::Ok,
-            },
-            Err(response) => response,
-        },
-        Err(auth_error) => ApiResponse {
+            })
+            .map_err(|response| response),
+        Err(auth_error) => Err(ApiResponse {
             json: auth_error,
             status: Status::Unauthorized,
-        },
+        }),
     }
 }
 
@@ -82,36 +83,12 @@ pub struct NewUserData {
 }
 
 #[post("/", format = "application/json", data = "<user>")] // data attribute tells rocket to expect Body Data - then map the body to a parameter
-pub fn create(user: Result<Json<NewUserData>, JsonError>, connection: DnDAgendaDB) -> ApiResponse {
-    match user {
-        Ok(json_user) => {
-            let new_user = json_user.into_inner();
-
-            let mut extractor = FieldValidator::validate(&new_user);
-            let username = extractor.extract("username", new_user.username);
-            let email = extractor.extract("email", new_user.email);
-            let password = extractor.extract("password", new_user.password);
-
-            let check = extractor.check();
-            match check {
-                Ok(_) => {
-                    let insertable_user = user::InsertableUser {
-                        username,
-                        email,
-                        password,
-                    };
-                    match user::InsertableUser::create(insertable_user, &connection) {
-                        Ok(user) => ApiResponse {
-                            json: json!({ "user": user.to_user_auth() }),
-                            status: Status::Created,
-                        },
-                        Err(response) => response,
-                    }
-                }
-                Err(response) => response,
-            }
-        }
-        Err(json_error) => match json_error {
+pub fn create(
+    user: Result<Json<NewUserData>, JsonError>,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    let new_user = user.map_err(|json_error| {
+        match json_error {
             JsonError::Parse(_req, err) => ApiResponse {
                 json: json!({ "error": err.to_string() }),
                 status: Status::BadRequest,
@@ -120,8 +97,28 @@ pub fn create(user: Result<Json<NewUserData>, JsonError>, connection: DnDAgendaD
                 json: json!({ "error": "I/O error occured while reading the incoming request data" }),
                 status: Status::InternalServerError,
             },
-        },
-    }
+        }
+    })?.into_inner();
+
+    let mut extractor = FieldValidator::validate(&new_user);
+    let username = extractor.extract("username", new_user.username);
+    let email = extractor.extract("email", new_user.email);
+    let password = extractor.extract("password", new_user.password);
+
+    extractor.check()?;
+
+    let insertable_user = user::InsertableUser {
+        username,
+        email,
+        password,
+    };
+
+    user::InsertableUser::create(insertable_user, &connection)
+        .map(|user| ApiResponse {
+            json: json!({ "user": user.to_user_auth() }),
+            status: Status::Created,
+        })
+        .map_err(|response| response)
 }
 
 #[derive(Deserialize)]
