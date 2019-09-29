@@ -164,10 +164,5 @@ pub fn create(
 }
 
 fn slugify(title: &str) -> String {
-    format!("{}-{}", slug::slugify(title), generate_suffix(6))
-}
-
-fn generate_suffix(len: usize) -> String {
-    let mut rng = thread_rng();
-    (0..len).map(|_| rng.sample(Alphanumeric)).collect()
+     slug::slugify(title)
 }

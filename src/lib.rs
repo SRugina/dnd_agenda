@@ -35,7 +35,8 @@ pub fn rocket() -> rocket::Rocket {
                 user::routes::login,
                 user::routes::get_user,
                 user::routes::get_all,
-                user::routes::get_sessions
+                user::routes::get_sessions,
+                user::routes::put_user
             ],
         )
         .mount(

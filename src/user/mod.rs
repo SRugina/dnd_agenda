@@ -251,3 +251,42 @@ impl InsertableUser {
         }
     }
 }
+
+// TODO: remove clone when diesel will allow skipping fields
+#[derive(Deserialize, AsChangeset, Default, Clone)]
+#[table_name = "users"]
+pub struct UpdateUser {
+    username: Option<String>,
+    email: Option<String>,
+    bio: Option<String>,
+    image: Option<String>,
+
+    // hack to skip the field
+    password: Option<String>,
+}
+
+impl UpdateUser {
+    pub fn update(
+        id: i32,
+        user: &UpdateUser,
+        connection: &PgConnection,
+    ) -> Result<User, ApiResponse> {
+        let user = &UpdateUser {
+            password: None,
+            ..user.clone()
+        };
+        match diesel::update(users::table.find(id))
+            .set(user)
+            .get_result::<User>(connection)
+        {
+            Ok(user) => Ok(user),
+            Err(error) => {
+                println!("Cannot update user: {:#?}", error);
+                Err(ApiResponse {
+                    json: json!({ "error": "cannot update user" }),
+                    status: Status::UnprocessableEntity,
+                })
+            }
+        }
+    }
+}
