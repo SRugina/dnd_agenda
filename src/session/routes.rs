@@ -16,7 +16,6 @@ use validator::Validate;
 
 use chrono::{DateTime, Utc};
 
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use slug;
 
 use regex::Regex;
@@ -160,6 +159,75 @@ pub fn create(
             json: auth_error,
             status: Status::Unauthorized,
         },
+    }
+}
+
+#[derive(Deserialize)]
+pub struct UpdateSessionData {
+    // #[validate(length(min = 1, code = "Title must be at least 1 character long"))]
+    title: Option<String>,
+    // #[validate(length(min = 1, code = "Description must be at least 1 character long"))]
+    description: Option<String>,
+    // #[validate(custom = "validate_user_exists")]
+    // #[validate(regex(
+    //     path = "SESSION_DATE_FORMAT",
+    //     code = "must be valid ouput of JS toISOString()"
+    // ))]
+    session_date: Option<String>,
+    // #[validate(custom = "validate_colour")]
+    colour: Option<String>,
+}
+
+#[put("/<session_id>", format = "application/json", data = "<session>")]
+pub fn put_session(
+    auth: Result<Auth, JsonValue>,
+    session: Result<Json<UpdateSessionData>, JsonError>,
+    session_id: i32,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(_auth) => {
+            let session_details = session.map_err(|json_error| {
+                match json_error {
+                    JsonError::Parse(_req, err) => ApiResponse {
+                        json: json!({ "error": err.to_string() }),
+                        status: Status::BadRequest,
+                    },
+                    JsonError::Io(_err) => ApiResponse {
+                        json: json!({ "error": "I/O error occured while reading the incoming request data" }),
+                        status: Status::InternalServerError,
+                    },
+                }
+            })?.into_inner();
+
+            // let mut extractor = FieldValidator::validate(&session_details);
+            // let title = extractor.extract("title", session_details.title);
+            // let description = extractor.extract("description", session_details.description);
+            // let session_date = extractor.extract("session_date", session_details.session_date);
+            // let colour = extractor.extract("colour", session_details.colour);
+
+            // extractor.check()?;
+
+            let update_session = session::UpdateSession {
+                title: session_details.title,
+                description: session_details.description,
+                session_date: Some(session_details.session_date.unwrap().parse::<DateTime<Utc>>().unwrap()),
+                colour: session_details.colour,
+
+                dm: None,
+            };
+
+            session::UpdateSession::update(session_id, &update_session, &connection)
+                .map(|session| ApiResponse {
+                    json: json!({ "session": session }),
+                    status: Status::Ok,
+                })
+                .map_err(|response| response)
+        },
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
     }
 }
 

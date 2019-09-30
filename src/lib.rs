@@ -33,10 +33,10 @@ pub fn rocket() -> rocket::Rocket {
             routes![
                 user::routes::create,
                 user::routes::login,
-                user::routes::get_user,
+                user::routes::get_self,
                 user::routes::get_all,
                 user::routes::get_sessions,
-                user::routes::put_user
+                user::routes::put_self
             ],
         )
         .mount(

@@ -26,69 +26,51 @@ pub struct Session {
 
 impl Session {
     pub fn read(connection: &PgConnection) -> Result<Vec<Session>, ApiResponse> {
-        match sessions::table
+        sessions::table
             .order(sessions::id)
             .load::<Session>(connection)
-        {
-            Ok(sessions) => Ok(sessions),
-            Err(error) => {
+            .map(|sessions| sessions)
+            .map_err(|error| {
                 println!("Error: {:#?}", error);
-                Err(ApiResponse {
+                ApiResponse {
                     json: json!({"error": "Sessions not found" }),
                     status: Status::NotFound,
-                })
-            }
-        }
+                }
+            })
     }
 
     pub fn find(session_id: i32, connection: &PgConnection) -> Result<Session, ApiResponse> {
-        match sessions::table
+        sessions::table
             .find(session_id)
             .first::<Session>(connection)
-        {
-            Ok(session) => Ok(session),
-            Err(error) => {
+            .map(|session| session)
+            .map_err(|error| {
                 println!("Error: {:#?}", error);
-                Err(ApiResponse {
+                ApiResponse {
                     json: json!({"error": "Session not found" }),
                     status: Status::NotFound,
-                })
-            }
-        }
+                }
+            })
     }
 
     pub fn read_users(
         session_id: i32,
         connection: &PgConnection,
     ) -> Result<Vec<User>, ApiResponse> {
-        match sessions::table
-            .find(session_id)
-            .first::<Session>(connection)
-        {
-            Ok(session) => {
-                match SessionUser::belonging_to(&session)
-                    .inner_join(users::table)
-                    .select(users::all_columns)
-                    .load::<User>(connection)
-                {
-                    Ok(users) => Ok(users),
-                    Err(error) => {
-                        println!("Error: {:#?}", error);
-                        Err(ApiResponse {
-                            json: json!({"error": "Users not found" }),
-                            status: Status::NotFound,
-                        })
-                    }
-                }
-            }
-            Err(error) => {
+        let session = Session::find(session_id, connection).map_err(|response| response)?;
+
+        SessionUser::belonging_to(&session)
+            .inner_join(users::table)
+            .select(users::all_columns)
+            .load::<User>(connection)
+            .map(|users| users)
+            .map_err(|error| {
                 println!("Error: {:#?}", error);
-                Err(ApiResponse {
-                    json: json!({"error": "Session not found" }),
+                ApiResponse {
+                    json: json!({"error": "Users not found" }),
                     status: Status::NotFound,
-                })
-            }
-        }
+                }
+            })
     }
 }
 
@@ -162,10 +144,44 @@ impl InsertableSession {
             Err(error) => {
                 println!("Error: {:#?}", error);
                 Err(ApiResponse {
-                    json: json!({"error": "Could not create session" }),
+                    json: json!({"error": "Title must be unique", "details": error.to_string() }), // assume this as the most common cause due to slug and title being unique
                     status: Status::InternalServerError,
                 })
             }
         }
+    }
+}
+
+// TODO: remove clone when diesel will allow skipping fields
+#[derive(Deserialize, AsChangeset, Default, Clone)]
+#[table_name = "sessions"]
+pub struct UpdateSession {
+    title: Option<String>,
+    description: Option<String>,
+    session_date: Option<DateTime<Utc>>,
+    colour: Option<String>,
+
+    // hack to skip the field
+    dm: Option<i32>,
+}
+
+impl UpdateSession {
+    pub fn update(
+        id: i32,
+        session: &UpdateSession,
+        connection: &PgConnection,
+    ) -> Result<Session, ApiResponse> {
+
+        diesel::update(sessions::table.find(id))
+            .set(session)
+            .get_result::<Session>(connection)
+            .map(|session| session)
+            .map_err(|error| {
+                println!("Cannot update session: {:#?}", error);
+                ApiResponse {
+                    json: json!({ "error": "cannot update session" }),
+                    status: Status::UnprocessableEntity,
+                }
+            })
     }
 }
