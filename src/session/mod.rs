@@ -26,7 +26,10 @@ pub struct Session {
 
 impl Session {
     pub fn read(connection: &PgConnection) -> Result<Vec<Session>, ApiResponse> {
-        match sessions::table.order(sessions::id).load::<Session>(connection) {
+        match sessions::table
+            .order(sessions::id)
+            .load::<Session>(connection)
+        {
             Ok(sessions) => Ok(sessions),
             Err(error) => {
                 println!("Error: {:#?}", error);
@@ -39,7 +42,10 @@ impl Session {
     }
 
     pub fn find(session_id: i32, connection: &PgConnection) -> Result<Session, ApiResponse> {
-        match sessions::table.find(session_id).first::<Session>(connection) {
+        match sessions::table
+            .find(session_id)
+            .first::<Session>(connection)
+        {
             Ok(session) => Ok(session),
             Err(error) => {
                 println!("Error: {:#?}", error);
@@ -55,7 +61,10 @@ impl Session {
         session_id: i32,
         connection: &PgConnection,
     ) -> Result<Vec<User>, ApiResponse> {
-        match sessions::table.find(session_id).first::<Session>(connection) {
+        match sessions::table
+            .find(session_id)
+            .first::<Session>(connection)
+        {
             Ok(session) => {
                 match SessionUser::belonging_to(&session)
                     .inner_join(users::table)

@@ -219,23 +219,18 @@ impl InsertableUser {
         mut user: InsertableUser,
         connection: &PgConnection,
     ) -> Result<User, ApiResponse> {
-        match hash(user.password, DEFAULT_COST) {
-            Ok(hashed) => user.password = hashed,
-            Err(error) => {
-                println!("Cannot hash password: {:#?}", error);
-                return Err(ApiResponse {
-                    json: json!({"error": "error hashing"}),
-                    status: Status::InternalServerError,
-                });
+        user.password = hash(user.password, DEFAULT_COST).map_err(|error| {
+            println!("Cannot hash password: {:#?}", error);
+            ApiResponse {
+                json: json!({"error": "error hashing"}),
+                status: Status::InternalServerError,
             }
-        };
+        })?;
 
-        let result: Result<User, UserCreationError> = diesel::insert_into(users::table)
-            .values(user)
+        match diesel::insert_into(users::table)
+            .values(&user)
             .get_result::<User>(connection)
-            .map_err(Into::into);
-
-        match result {
+            .map_err(Into::into) {
             Ok(user) => Ok(user),
             Err(error) => {
                 let field = match error {

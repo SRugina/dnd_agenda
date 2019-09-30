@@ -32,8 +32,4 @@ joinable!(sessions -> users (dm));
 joinable!(sessions_users -> sessions (session_id));
 joinable!(sessions_users -> users (user_id));
 
-allow_tables_to_appear_in_same_query!(
-    sessions,
-    sessions_users,
-    users,
-);
+allow_tables_to_appear_in_same_query!(sessions, sessions_users, users,);

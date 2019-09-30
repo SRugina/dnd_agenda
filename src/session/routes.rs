@@ -164,5 +164,5 @@ pub fn create(
 }
 
 fn slugify(title: &str) -> String {
-     slug::slugify(title)
+    slug::slugify(title)
 }
