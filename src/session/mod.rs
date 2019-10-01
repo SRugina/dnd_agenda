@@ -160,6 +160,8 @@ pub struct UpdateSession {
     description: Option<String>,
     session_date: Option<DateTime<Utc>>,
     colour: Option<String>,
+    #[serde(skip)]
+    slug: Option<String>,
 
     // hack to skip the field
     dm: Option<i32>,
@@ -171,7 +173,6 @@ impl UpdateSession {
         session: &UpdateSession,
         connection: &PgConnection,
     ) -> Result<Session, ApiResponse> {
-
         diesel::update(sessions::table.find(id))
             .set(session)
             .get_result::<Session>(connection)

@@ -99,10 +99,11 @@ pub fn create(
         }
     })?.into_inner();
 
+    let empty_flag = false; //i.e. emit error if empty
     let mut extractor = FieldValidator::validate(&new_user);
-    let username = extractor.extract("username", new_user.username);
-    let email = extractor.extract("email", new_user.email);
-    let password = extractor.extract("password", new_user.password);
+    let username = extractor.extract("username", new_user.username, empty_flag);
+    let email = extractor.extract("email", new_user.email, empty_flag);
+    let password = extractor.extract("password", new_user.password, empty_flag);
 
     extractor.check()?;
 
@@ -144,9 +145,10 @@ pub fn login(
         }
     })?.into_inner();
 
+    let empty_flag = false; // i.e. emit error if empty
     let mut extractor = FieldValidator::default();
-    let email = extractor.extract("email", login_user.email);
-    let password = extractor.extract("password", login_user.password);
+    let email = extractor.extract("email", login_user.email, empty_flag);
+    let password = extractor.extract("password", login_user.password, empty_flag);
     extractor.check()?;
 
     user::User::login(&email, &password, &connection)
@@ -157,15 +159,14 @@ pub fn login(
         .map_err(|response| response)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate, Clone)]
 pub struct UpdateUserData {
-    // #[validate(length(min = 1, code = "Username must be at least 1 character long"))]
+    #[validate(length(min = 1, code = "Username must be at least 1 character long"))]
     username: Option<String>,
-    // #[validate(email(code = "Email must be a valid email"))]
+    #[validate(email(code = "Email must be a valid email"))]
     email: Option<String>,
-    // #[validate(length(min = 1, code = "Bio must be at least 1 character long"))]
     bio: Option<String>,
-    // #[validate(url(code = "Image must be a valid url"))]
+    #[validate(url(code = "Image must be a valid url"))]
     image: Option<String>,
 }
 
@@ -190,14 +191,18 @@ pub fn put_self(
                 }
             })?.into_inner();
 
-            // let mut extractor = FieldValidator::validate(&user_details);
-            // let username = extractor.extract("username", user_details.username);
-            // let email = extractor.extract("email", user_details.email);
-            // let bio = extractor.extract("bio", user_details.bio);
-            // let image = extractor.extract("image", user_details.image);
+            let user_validator_details = user_details.clone();
 
-            // extractor.check()?;
+            let empty_flag = true; // i.e. do not emit error if empty
+            let mut extractor = FieldValidator::validate(&user_details);
+            let _username =
+                extractor.extract("username", user_validator_details.username, empty_flag);
+            let _email = extractor.extract("email", user_validator_details.email, empty_flag);
+            let _image = extractor.extract("image", user_validator_details.image, empty_flag);
 
+            extractor.check()?;
+
+            //don't use values above because we want to pass on the Option<>, if extractor fails this won't execute anyway
             let update_user = user::UpdateUser {
                 username: user_details.username,
                 email: user_details.email,
@@ -214,6 +219,26 @@ pub fn put_self(
                 })
                 .map_err(|response| response)
         }
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
+#[get("/<username>/profile", format = "application/json")]
+pub fn get_profile(
+    auth: Result<Auth, JsonValue>,
+    username: String,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(_auth) => user::User::find_profile(&username, &connection)
+            .map(|profile| ApiResponse {
+                json: json!({ "profile": profile }),
+                status: Status::Ok,
+            })
+            .map_err(|response| response),
         Err(auth_error) => Err(ApiResponse {
             json: auth_error,
             status: Status::Unauthorized,

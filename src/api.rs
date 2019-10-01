@@ -145,14 +145,19 @@ impl FieldValidator {
         }
     }
 
-    pub fn extract<T>(&mut self, field_name: &'static str, field: Option<T>) -> T
+    pub fn extract<T>(&mut self, field_name: &'static str, field: Option<T>, empty: bool) -> T
     where
         T: Default,
     {
         field.unwrap_or_else(|| {
-            self.errors
-                .add(field_name, ValidationError::new("can't be blank"));
-            T::default()
+            // if we want to ignore empty fields
+            if empty {
+                T::default()
+            } else {
+                self.errors
+                    .add(field_name, ValidationError::new("can't be blank"));
+                T::default()
+            }
         })
     }
 }

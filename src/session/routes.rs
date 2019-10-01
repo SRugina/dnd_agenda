@@ -112,12 +112,15 @@ pub fn create(
             Ok(json_session) => {
                 let new_session = json_session.into_inner();
 
+                let empty_flag = false; // i.e. emit error if empty
                 let mut extractor = FieldValidator::validate(&new_session);
-                let title = extractor.extract("title", new_session.title);
-                let description = extractor.extract("description", new_session.description);
-                let dm = extractor.extract("dm", new_session.dm);
-                let session_date_str = extractor.extract("session_date", new_session.session_date);
-                let colour = extractor.extract("colour", new_session.colour);
+                let title = extractor.extract("title", new_session.title, empty_flag);
+                let description =
+                    extractor.extract("description", new_session.description, empty_flag);
+                let dm = extractor.extract("dm", new_session.dm, empty_flag);
+                let session_date_str =
+                    extractor.extract("session_date", new_session.session_date, empty_flag);
+                let colour = extractor.extract("colour", new_session.colour, empty_flag);
 
                 let check = extractor.check();
 
@@ -162,20 +165,20 @@ pub fn create(
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate, Clone)]
 pub struct UpdateSessionData {
-    // #[validate(length(min = 1, code = "Title must be at least 1 character long"))]
-    title: Option<String>,
-    // #[validate(length(min = 1, code = "Description must be at least 1 character long"))]
-    description: Option<String>,
-    // #[validate(custom = "validate_user_exists")]
-    // #[validate(regex(
-    //     path = "SESSION_DATE_FORMAT",
-    //     code = "must be valid ouput of JS toISOString()"
-    // ))]
-    session_date: Option<String>,
-    // #[validate(custom = "validate_colour")]
-    colour: Option<String>,
+    #[validate(length(min = 1, code = "Title must be at least 1 character long"))]
+    pub title: Option<String>,
+    #[validate(length(min = 1, code = "Description must be at least 1 character long"))]
+    pub description: Option<String>,
+    #[validate(regex(
+        path = "SESSION_DATE_FORMAT",
+        code = "must be valid ouput of JS toISOString()"
+    ))]
+    pub session_date: Option<String>,
+    #[validate(custom = "validate_colour")]
+    pub colour: Option<String>,
+    slug: Option<String>,
 }
 
 #[put("/<session_id>", format = "application/json", data = "<session>")]
@@ -187,7 +190,7 @@ pub fn put_session(
 ) -> Result<ApiResponse, ApiResponse> {
     match auth {
         Ok(_auth) => {
-            let session_details = session.map_err(|json_error| {
+            let mut session_details = session.map_err(|json_error| {
                 match json_error {
                     JsonError::Parse(_req, err) => ApiResponse {
                         json: json!({ "error": err.to_string() }),
@@ -200,20 +203,50 @@ pub fn put_session(
                 }
             })?.into_inner();
 
-            // let mut extractor = FieldValidator::validate(&session_details);
-            // let title = extractor.extract("title", session_details.title);
-            // let description = extractor.extract("description", session_details.description);
-            // let session_date = extractor.extract("session_date", session_details.session_date);
-            // let colour = extractor.extract("colour", session_details.colour);
+            if let Some(ref title) = session_details.title {
+                session_details.slug = Some(slugify(&title));
+            }
 
-            // extractor.check()?;
+            let session_validator_details = session_details.clone();
+
+            let empty_flag = true; // i.e. do not emit error if empty
+            let mut extractor = FieldValidator::validate(&session_details);
+            let _title = extractor.extract("title", session_validator_details.title, empty_flag);
+            let _description = extractor.extract(
+                "description",
+                session_validator_details.description,
+                empty_flag,
+            );
+            let _sess_date = extractor.extract(
+                "session_date",
+                session_validator_details.session_date,
+                empty_flag,
+            );
+            let _colour = extractor.extract("colour", session_validator_details.colour, empty_flag);
+
+            extractor.check()?;
+
+            let session_date: Option<DateTime<Utc>>;
+
+            if let Some(ref _date) = session_details.session_date {
+                session_date = Some(
+                    session_details
+                        .session_date
+                        .unwrap()
+                        .parse::<DateTime<Utc>>()
+                        .unwrap(),
+                );
+            } else {
+                session_date = None;
+            }
 
             let update_session = session::UpdateSession {
                 title: session_details.title,
                 description: session_details.description,
-                session_date: Some(session_details.session_date.unwrap().parse::<DateTime<Utc>>().unwrap()),
+                session_date: session_date,
                 colour: session_details.colour,
 
+                slug: session_details.slug,
                 dm: None,
             };
 
@@ -223,7 +256,7 @@ pub fn put_session(
                     status: Status::Ok,
                 })
                 .map_err(|response| response)
-        },
+        }
         Err(auth_error) => Err(ApiResponse {
             json: auth_error,
             status: Status::Unauthorized,

@@ -37,13 +37,13 @@ pub struct UserAuth<'a> {
     token: String,
 }
 
-// #[derive(Serialize)]
-// pub struct Profile {
-//     username: String,
-//     bio: Option<String>,
-//     image: Option<String>,
-//     following: bool,
-// }
+#[derive(Serialize)]
+pub struct Profile {
+    id: i32, // to get the sessions for the profile
+    username: String,
+    bio: Option<String>,
+    image: Option<String>,
+}
 
 impl User {
     pub fn to_user_auth(&self) -> UserAuth {
@@ -64,14 +64,14 @@ impl User {
         }
     }
 
-    // pub fn to_profile(self, following: bool) -> Profile {
-    //     Profile {
-    //         username: self.username,
-    //         bio: self.bio,
-    //         image: self.image,
-    //         following,
-    //     }
-    // }
+    pub fn to_profile(self) -> Profile {
+        Profile {
+            id: self.id,
+            username: self.username,
+            bio: self.bio,
+            image: self.image,
+        }
+    }
 
     pub fn login(
         email: &str,
@@ -134,6 +134,20 @@ impl User {
             })
     }
 
+    pub fn find_profile(username: &str, connection: &PgConnection) -> Result<Profile, ApiResponse> {
+        users::table
+            .filter(users::username.eq(username))
+            .first::<User>(connection)
+            .map(|user| user.to_profile())
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "User not found" }),
+                    status: Status::NotFound,
+                }
+            })
+    }
+
     pub fn read_sessions(
         user_id: i32,
         connection: &PgConnection,
@@ -153,13 +167,6 @@ impl User {
                 }
             })
     }
-
-    // pub fn update(id: i32, user: User, connection: &PgConnection) -> bool {
-    //     diesel::update(users::table.find(id))
-    //         .set(&user)
-    //         .execute(connection)
-    //         .is_ok()
-    // }
 
     // pub fn delete(id: i32, connection: &PgConnection) -> bool {
     //     diesel::delete(users::table.find(id))

@@ -36,7 +36,8 @@ pub fn rocket() -> rocket::Rocket {
                 user::routes::get_self,
                 user::routes::get_all,
                 user::routes::get_sessions,
-                user::routes::put_self
+                user::routes::put_self,
+                user::routes::get_profile,
             ],
         )
         .mount(
@@ -45,7 +46,8 @@ pub fn rocket() -> rocket::Rocket {
                 session::routes::create,
                 session::routes::get_session,
                 session::routes::get_all,
-                session::routes::get_users
+                session::routes::get_users,
+                session::routes::put_session
             ],
         )
         .attach(database::DnDAgendaDB::fairing())
