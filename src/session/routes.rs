@@ -277,11 +277,11 @@ pub fn join_session(
                 .map_err(|response| response)?;
 
             session::Session::request_to_join(session_id, auth.id, &connection)
-                .map(|| ApiResponse {
+                .map(|()| ApiResponse {
                     json: json!({ "message": "requested to join session successfully" }),
                     status: Status::Ok,
                 })
-                .map_err(|response| response))
+                .map_err(|response| response)
         }
         Err(auth_error) => Err(ApiResponse {
             json: auth_error,
@@ -303,12 +303,12 @@ pub fn accept_to_session(
                 .map_err(|response| response)?;
 
             if auth.id == session_details.dm {
-                session::Session::accept_to_join(&session_details, user_id, auth.id, &connection)
+                session::Session::accept_to_join(&session_details, user_id, &connection)
                     .map(|user| ApiResponse {
-                        json: json!({ "user": user.to_user_auth() }),
-                        status: Status::Created,
+                        json: json!({ "message": "successfully accepted user to session" }),
+                        status: Status::Ok,
                     })
-                    .map_err(|response| response))
+                    .map_err(|response| response)
             } else {
                 Err(ApiResponse {
                     json: json!({ "error": "you are not the DM" }),
