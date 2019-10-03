@@ -60,6 +60,8 @@ impl Session {
         let session = Session::find(session_id, connection).map_err(|response| response)?;
 
         SessionUser::belonging_to(&session)
+            .filter(dm_accepted.eq(true))
+            .filter(user_accepted.eq(true))
             .inner_join(users::table)
             .select(users::all_columns)
             .load::<User>(connection)
@@ -72,6 +74,165 @@ impl Session {
                 }
             })
     }
+
+    pub fn request_to_join (
+        session_id: i32,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<(), ApiResponse> {
+        match connection
+            .build_transaction()
+            .run::<Session, diesel::result::Error, _>(|| {
+                let new_session_user = &InsertableSessionUser {
+                    session_id: session_id,
+                    user_id: user_id,
+                    dm_accepted: false,
+                    user_accepted: true,
+                };
+
+                diesel::insert_into(sessions_users::table)
+                    .values(new_session_user)
+                    .get_result::<SessionUser>(connection)?;
+
+
+                Ok(())
+            }) {
+            Ok(session) => Ok(session),
+            Err(error) => {
+                println!("Error: {:#?}", error);
+                Err(ApiResponse {
+                    json: json!({"error": "Could not join the session", "details": error.to_string() }),
+                    status: Status::InternalServerError,
+                })
+            }
+        }
+    }
+
+    pub fn accept_to_join (
+        session: &Session,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<(), ApiResponse> {
+        match connection
+            .build_transaction()
+            .run::<Session, diesel::result::Error, _>(|| {
+
+            let session_user = SessionUser::belonging_to(&session)
+                .filter(dm_accepted.eq(false))
+                .filter(user_accepted.eq(true))
+                .filter(user_id.eq(user_id))
+                .load::<SessionUser>(connection)
+                .map_err(|error| {
+                    println!("Error: {:#?}", error);
+                    ApiResponse {
+                        json: json!({"error": "SessionUser not found" }),
+                        status: Status::NotFound,
+                    }
+                })?;
+                let updated_session_user = &InsertableSessionUser {
+                    session_id: session_user.session_id,
+                    user_id: session_user.user_id,
+                    dm_accepted: true,
+                    user_accepted: true,
+                };
+
+                diesel::update(sessions_users::table)
+                    .set(updated_session_user)
+                    .get_result::<SessionUser>(connection)?;
+
+
+                Ok(())
+            }) {
+            Ok(session) => Ok(session),
+            Err(error) => {
+                println!("Error: {:#?}", error);
+                Err(ApiResponse {
+                    json: json!({"error": "Could not join the session", "details": error.to_string() }),
+                    status: Status::InternalServerError,
+                })
+            }
+        }
+    }
+
+    pub fn invite_to_join (
+        session_id: i32,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<(), ApiResponse> {
+        match connection
+            .build_transaction()
+            .run::<Session, diesel::result::Error, _>(|| {
+
+                let new_session_user = &InsertableSessionUser {
+                    session_id: session_id,
+                    user_id: user_id,
+                    dm_accepted: true,
+                    user_accepted: false,
+                };
+
+                diesel::insert_into(sessions_users::table)
+                    .values(new_session_user)
+                    .get_result::<SessionUser>(connection)?;
+
+
+                Ok(())
+            }) {
+            Ok(session) => Ok(session),
+            Err(error) => {
+                println!("Error: {:#?}", error);
+                Err(ApiResponse {
+                    json: json!({"error": "Could not join the session", "details": error.to_string() }),
+                    status: Status::InternalServerError,
+                })
+            }
+        }
+    }
+
+    pub fn accept_invitation (
+        session_id: i32,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<(), ApiResponse> {
+        match connection
+            .build_transaction()
+            .run::<Session, diesel::result::Error, _>(|| {
+
+                let session_user = SessionUser::belonging_to(&session)
+                .filter(dm_accepted.eq(true))
+                .filter(user_accepted.eq(false))
+                .filter(user_id.eq(user_id))
+                .load::<SessionUser>(connection)
+                .map_err(|error| {
+                    println!("Error: {:#?}", error);
+                    ApiResponse {
+                        json: json!({"error": "SessionUser not found" }),
+                        status: Status::NotFound,
+                    }
+                })?;
+                let updated_session_user = &InsertableSessionUser {
+                    session_id: session_user.session_id,
+                    user_id: session_user.user_id,
+                    dm_accepted: true,
+                    user_accepted: true,
+                };
+
+                diesel::update(sessions_users::table)
+                    .set(updated_session_user)
+                    .get_result::<SessionUser>(connection)?;
+
+
+                Ok(())
+            }) {
+            Ok(session) => Ok(session),
+            Err(error) => {
+                println!("Error: {:#?}", error);
+                Err(ApiResponse {
+                    json: json!({"error": "Could not join the session", "details": error.to_string() }),
+                    status: Status::InternalServerError,
+                })
+            }
+        }
+    }
 }
 
 #[derive(Identifiable, Queryable, Debug, Associations, Serialize, Deserialize)]
@@ -80,8 +241,11 @@ impl Session {
 #[primary_key(session_id, user_id)]
 #[table_name = "sessions_users"]
 pub struct SessionUser {
+    pub id: i32,
     pub session_id: i32,
     pub user_id: i32,
+    pub dm_accepted: bool,
+    pub user_accepted: bool,
 }
 
 /*
@@ -112,14 +276,17 @@ pub struct InsertableSession {
 
 #[table_name = "sessions_users"]
 #[derive(Serialize, Deserialize, Insertable)]
-pub struct InsertableSessionsUsers {
+pub struct InsertableSessionUser {
     pub session_id: i32,
     pub user_id: i32,
+    pub dm_accepted: bool,
+    pub user_accepted: bool,
 }
 
 impl InsertableSession {
     pub fn create(
         session: InsertableSession,
+        creator_id: i32,
         connection: &PgConnection,
     ) -> Result<Session, ApiResponse> {
         match connection
@@ -129,14 +296,30 @@ impl InsertableSession {
                     .values(&session)
                     .get_result::<Session>(connection)?;
 
-                let new_sessions_users = &InsertableSessionsUsers {
+                let new_session_user = &InsertableSessionUser {
                     session_id: new_session.id,
                     user_id: new_session.dm,
+                    dm_accepted: true,
+                    user_accepted: true,
                 };
 
                 diesel::insert_into(sessions_users::table)
-                    .values(new_sessions_users)
+                    .values(new_session_user)
                     .get_result::<SessionUser>(connection)?;
+
+                // add creator of session as member of the party if they are not the dm
+                if new_session.dm != creator_id {
+                    let creator_session_user = &InsertableSessionUser {
+                    session_id: new_session.id,
+                    user_id: creator_id,
+                    dm_accepted: true,
+                    user_accepted: true,
+                };
+
+                diesel::insert_into(sessions_users::table)
+                    .values(creator_session_user)
+                    .get_result::<SessionUser>(connection)?;
+                }
 
                 Ok(new_session)
             }) {

@@ -14,6 +14,8 @@ table! {
     sessions_users (session_id, user_id) {
         session_id -> Int4,
         user_id -> Int4,
+        dm_accepted -> Bool,
+        user_accepted -> Bool,
     }
 }
 
@@ -32,4 +34,8 @@ joinable!(sessions -> users (dm));
 joinable!(sessions_users -> sessions (session_id));
 joinable!(sessions_users -> users (user_id));
 
-allow_tables_to_appear_in_same_query!(sessions, sessions_users, users,);
+allow_tables_to_appear_in_same_query!(
+    sessions,
+    sessions_users,
+    users,
+);

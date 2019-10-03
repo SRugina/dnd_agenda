@@ -108,7 +108,7 @@ pub fn create(
     connection: DnDAgendaDB,
 ) -> ApiResponse {
     match auth {
-        Ok(_auth) => match session {
+        Ok(auth) => match session {
             Ok(json_session) => {
                 let new_session = json_session.into_inner();
 
@@ -136,7 +136,7 @@ pub fn create(
                             session_date,
                             colour,
                         };
-                        match session::InsertableSession::create(insertable_session, &connection) {
+                        match session::InsertableSession::create(insertable_session, auth.id, &connection) {
                             Ok(session) => ApiResponse {
                                 json: json!({ "session": session }),
                                 status: Status::Created,
@@ -256,6 +256,65 @@ pub fn put_session(
                     status: Status::Ok,
                 })
                 .map_err(|response| response)
+        }
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
+
+#[get("/<session_id>/join", format = "application/json")]
+pub fn join_session(
+    auth: Result<Auth, JsonValue>,
+    session_id: i32,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(auth) => {
+            let _session_details = session::Session::find(session_id, &connection)
+                .map_err(|response| response)?;
+
+            session::Session::request_to_join(session_id, auth.id, &connection)
+                .map(|| ApiResponse {
+                    json: json!({ "message": "requested to join session successfully" }),
+                    status: Status::Ok,
+                })
+                .map_err(|response| response))
+        }
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
+#[get("/<session_id>/accept/<user_id>", format = "application/json")]
+pub fn accept_to_session(
+    auth: Result<Auth, JsonValue>,
+    session_id: i32,
+    user_id: i32,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(auth) => {
+            let session_details = session::Session::find(session_id, &connection)
+                .map_err(|response| response)?;
+
+            if auth.id == session_details.dm {
+                session::Session::accept_to_join(&session_details, user_id, auth.id, &connection)
+                    .map(|user| ApiResponse {
+                        json: json!({ "user": user.to_user_auth() }),
+                        status: Status::Created,
+                    })
+                    .map_err(|response| response))
+            } else {
+                Err(ApiResponse {
+                    json: json!({ "error": "you are not the DM" }),
+                    status: Status::Unauthorized,
+                })
+            }
         }
         Err(auth_error) => Err(ApiResponse {
             json: auth_error,
