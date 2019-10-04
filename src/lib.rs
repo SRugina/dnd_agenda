@@ -47,7 +47,12 @@ pub fn rocket() -> rocket::Rocket {
                 session::routes::get_session,
                 session::routes::get_all,
                 session::routes::get_users,
-                session::routes::put_session
+                session::routes::put_session,
+                session::routes::join_session,
+                session::routes::accept_to_session,
+                session::routes::invite_to_session,
+                session::routes::accept_invite_to_session,
+                session::routes::leave_session,
             ],
         )
         .attach(database::DnDAgendaDB::fairing())

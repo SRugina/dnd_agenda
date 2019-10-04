@@ -25,6 +25,14 @@ pub struct Session {
     pub colour: String,
 }
 
+// TODO: remove clone when diesel will allow skipping fields
+#[derive(Deserialize, AsChangeset, Default, Clone)]
+#[table_name = "sessions_users"]
+pub struct UpdateSessionUser {
+    dm_accepted: bool,
+    user_accepted: bool,
+}
+
 impl Session {
     pub fn read(connection: &PgConnection) -> Result<Vec<Session>, ApiResponse> {
         sessions::table
@@ -81,31 +89,24 @@ impl Session {
         user_id: i32,
         connection: &PgConnection,
     ) -> Result<(), ApiResponse> {
-        match connection
-            .build_transaction()
-            .run::<(), diesel::result::Error, _>(|| {
-                let new_session_user = &InsertableSessionUser {
-                    session_id: session_id,
-                    user_id: user_id,
-                    dm_accepted: false,
-                    user_accepted: true,
-                };
+        let new_session_user = &InsertableSessionUser {
+            session_id,
+            user_id,
+            dm_accepted: false,
+            user_accepted: true,
+        };
 
-                diesel::insert_into(sessions_users::table)
-                    .values(new_session_user)
-                    .get_result::<SessionUser>(connection)?;
-
-                Ok(())
-            }) {
-            Ok(()) => Ok(()),
-            Err(error) => {
+        diesel::insert_into(sessions_users::table)
+            .values(new_session_user)
+            .get_result::<SessionUser>(connection)
+            .map_err(|error| {
                 println!("Error: {:#?}", error);
-                Err(ApiResponse {
-                    json: json!({"error": "Could not join the session", "details": error.to_string() }),
+                ApiResponse {
+                    json: json!({"error": "Could not request to join the session", "details": error.to_string() }),
                     status: Status::InternalServerError,
-                })
-            }
-        }
+                }
+            })?;
+        Ok(())
     }
 
     pub fn accept_to_join(
@@ -117,24 +118,29 @@ impl Session {
             .filter(columns::dm_accepted.eq(false))
             .filter(columns::user_accepted.eq(true))
             .filter(columns::user_id.eq(user_id))
-            .first::<SessionUser>(connection)
+            .get_result::<SessionUser>(connection)
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {
-                    json: json!({"error": "SessionUser not found" }),
+                    json: json!({"error": "SessionUser not found", "details": error.to_string() }),
                     status: Status::NotFound,
                 }
             })?;
-        let updated_session_user = &InsertableSessionUser {
-            session_id: session_user.session_id,
-            user_id: session_user.user_id,
+        let updated_session_user = &UpdateSessionUser {
             dm_accepted: true,
             user_accepted: true,
         };
 
-        diesel::update(sessions_users::table)
+        diesel::update(sessions_users::table.find((session_user.session_id, user_id)))
             .set(updated_session_user)
-            .get_result::<SessionUser>(connection);
+            .get_result::<SessionUser>(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "SessionUser could not be updated", "details": error.to_string() }),
+                    status: Status::NotFound,
+                }
+            })?;
 
         Ok(())
     }
@@ -145,8 +151,8 @@ impl Session {
         connection: &PgConnection,
     ) -> Result<(), ApiResponse> {
         let new_session_user = &InsertableSessionUser {
-            session_id: session_id,
-            user_id: user_id,
+            session_id,
+            user_id,
             dm_accepted: true,
             user_accepted: false,
         };
@@ -157,52 +163,78 @@ impl Session {
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {
-                    json: json!({"error": "Could not make a request to join the session" }),
+                    json: json!({"error": "Could not make an invite to the user to join the session" }),
                     status: Status::InternalServerError,
                 }
-            });
+            })?;
 
         Ok(())
     }
-}
 
-pub fn accept_invitation(
-    session: Session,
-    user_id: i32,
-    connection: &PgConnection,
-) -> Result<(), ApiResponse> {
-    let session_user = SessionUser::belonging_to(&session)
-        .filter(columns::dm_accepted.eq(true))
-        .filter(columns::user_accepted.eq(false))
-        .filter(columns::session_id.eq(session.id))
-        .filter(columns::user_id.eq(user_id))
-        .first::<SessionUser>(connection)
-        .map_err(|error| {
-            println!("Error: {:#?}", error);
-            ApiResponse {
-                json: json!({"error": "User is not invited to this session" }),
-                status: Status::NotFound,
-            }
-        })?;
-    let updated_session_user = &InsertableSessionUser {
-        session_id: session_user.session_id,
-        user_id: session_user.user_id,
-        dm_accepted: true,
-        user_accepted: true,
-    };
+    pub fn accept_invite_to_join(
+        session: &Session,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<(), ApiResponse> {
+        let session_user = SessionUser::belonging_to(session)
+            .filter(columns::dm_accepted.eq(true))
+            .filter(columns::user_accepted.eq(false))
+            .filter(columns::user_id.eq(user_id))
+            .get_result::<SessionUser>(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "SessionUser not found", "details": error.to_string() }),
+                    status: Status::NotFound,
+                }
+            })?;
+        let updated_session_user = &UpdateSessionUser {
+            dm_accepted: true,
+            user_accepted: true,
+        };
 
-    diesel::update(sessions_users::table)
-        .set(updated_session_user)
-        .get_result::<SessionUser>(connection)
-        .map_err(|error| {
-            println!("Error: {:#?}", error);
-            ApiResponse {
-                json: json!({"error": "Failed to accept the invitation" }),
-                status: Status::InternalServerError,
-            }
-        });
+        diesel::update(sessions_users::table.find((session_user.session_id, user_id)))
+            .set(updated_session_user)
+            .get_result::<SessionUser>(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "SessionUser could not be updated", "details": error.to_string() }),
+                    status: Status::NotFound,
+                }
+            })?;
 
-    Ok(())
+        Ok(())
+    }
+
+    pub fn delete_user(
+        session: &Session,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<(), ApiResponse> {
+        let session_user = SessionUser::belonging_to(session)
+            .filter(columns::user_id.eq(user_id))
+            .get_result::<SessionUser>(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "SessionUser not found", "details": error.to_string() }),
+                    status: Status::NotFound,
+                }
+            })?;
+
+        diesel::delete(sessions_users::table.find((session_user.session_id, user_id)))
+            .execute(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "SessionUser could not be updated", "details": error.to_string() }),
+                    status: Status::NotFound,
+                }
+            })?;
+
+        Ok(())
+    }
 }
 
 #[derive(Identifiable, Queryable, Debug, Associations, Serialize, Deserialize)]

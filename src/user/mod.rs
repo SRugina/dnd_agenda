@@ -64,12 +64,12 @@ impl User {
         }
     }
 
-    pub fn to_profile(self) -> Profile {
+    pub fn to_profile(&self) -> Profile {
         Profile {
             id: self.id,
-            username: self.username,
-            bio: self.bio,
-            image: self.image,
+            username: self.username.clone(),
+            bio: self.bio.clone(),
+            image: self.image.clone(),
         }
     }
 

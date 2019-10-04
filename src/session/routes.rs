@@ -136,7 +136,11 @@ pub fn create(
                             session_date,
                             colour,
                         };
-                        match session::InsertableSession::create(insertable_session, auth.id, &connection) {
+                        match session::InsertableSession::create(
+                            insertable_session,
+                            auth.id,
+                            &connection,
+                        ) {
                             Ok(session) => ApiResponse {
                                 json: json!({ "session": session }),
                                 status: Status::Created,
@@ -243,7 +247,7 @@ pub fn put_session(
             let update_session = session::UpdateSession {
                 title: session_details.title,
                 description: session_details.description,
-                session_date: session_date,
+                session_date,
                 colour: session_details.colour,
 
                 slug: session_details.slug,
@@ -264,7 +268,6 @@ pub fn put_session(
     }
 }
 
-
 #[get("/<session_id>/join", format = "application/json")]
 pub fn join_session(
     auth: Result<Auth, JsonValue>,
@@ -273,11 +276,12 @@ pub fn join_session(
 ) -> Result<ApiResponse, ApiResponse> {
     match auth {
         Ok(auth) => {
-            let _session_details = session::Session::find(session_id, &connection)
-                .map_err(|response| response)?;
+            // get error if there is any (i.e. session does not exist)
+            let session_details =
+                session::Session::find(session_id, &connection).map_err(|response| response)?;
 
-            session::Session::request_to_join(session_id, auth.id, &connection)
-                .map(|()| ApiResponse {
+            session::Session::request_to_join(session_details.id, auth.id, &connection)
+                .map(|_| ApiResponse {
                     json: json!({ "message": "requested to join session successfully" }),
                     status: Status::Ok,
                 })
@@ -299,12 +303,12 @@ pub fn accept_to_session(
 ) -> Result<ApiResponse, ApiResponse> {
     match auth {
         Ok(auth) => {
-            let session_details = session::Session::find(session_id, &connection)
-                .map_err(|response| response)?;
+            let session_details =
+                session::Session::find(session_id, &connection).map_err(|response| response)?;
 
             if auth.id == session_details.dm {
                 session::Session::accept_to_join(&session_details, user_id, &connection)
-                    .map(|user| ApiResponse {
+                    .map(|_| ApiResponse {
                         json: json!({ "message": "successfully accepted user to session" }),
                         status: Status::Ok,
                     })
@@ -312,6 +316,98 @@ pub fn accept_to_session(
             } else {
                 Err(ApiResponse {
                     json: json!({ "error": "you are not the DM" }),
+                    status: Status::Unauthorized,
+                })
+            }
+        }
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
+#[get("/<session_id>/invite/<user_id>", format = "application/json")]
+pub fn invite_to_session(
+    auth: Result<Auth, JsonValue>,
+    session_id: i32,
+    user_id: i32,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(auth) => {
+            // get error if there is any (i.e. session does not exist)
+            let session_details =
+                session::Session::find(session_id, &connection).map_err(|response| response)?;
+            if auth.id == session_details.dm {
+                session::Session::invite_to_join(session_details.id, user_id, &connection)
+                    .map(|_| ApiResponse {
+                        json: json!({ "message": "invited user to join session successfully" }),
+                        status: Status::Ok,
+                    })
+                    .map_err(|response| response)
+            } else {
+                Err(ApiResponse {
+                    json: json!({ "error": "you are not the DM" }),
+                    status: Status::Unauthorized,
+                })
+            }
+        }
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
+#[get("/<session_id>/accept_invite", format = "application/json")]
+pub fn accept_invite_to_session(
+    auth: Result<Auth, JsonValue>,
+    session_id: i32,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(auth) => {
+            // get error if there is any (i.e. session does not exist)
+            let session_details =
+                session::Session::find(session_id, &connection).map_err(|response| response)?;
+
+            session::Session::accept_invite_to_join(&session_details, auth.id, &connection)
+                .map(|_| ApiResponse {
+                    json: json!({ "message": "requested to join session successfully" }),
+                    status: Status::Ok,
+                })
+                .map_err(|response| response)
+        }
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
+#[get("/<session_id>/leave", format = "application/json")]
+pub fn leave_session(
+    auth: Result<Auth, JsonValue>,
+    session_id: i32,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(auth) => {
+            // get error if there is any (i.e. session does not exist)
+            let session_details =
+                session::Session::find(session_id, &connection).map_err(|response| response)?;
+
+            if auth.id != session_details.dm {
+                session::Session::delete_user(&session_details, auth.id, &connection)
+                    .map(|_| ApiResponse {
+                        json: json!({ "message": "left session successfully" }),
+                        status: Status::Ok,
+                    })
+                    .map_err(|response| response)
+            } else {
+                Err(ApiResponse {
+                    json: json!({ "error": "you are the DM, so you cannot leave" }),
                     status: Status::Unauthorized,
                 })
             }
