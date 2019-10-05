@@ -168,11 +168,19 @@ impl User {
             })
     }
 
-    // pub fn delete(id: i32, connection: &PgConnection) -> bool {
-    //     diesel::delete(users::table.find(id))
-    //         .execute(connection)
-    //         .is_ok()
-    // }
+    pub fn delete(user_id: i32, connection: &PgConnection) -> Result<(), ApiResponse> {
+        diesel::delete(users::table.find(user_id))
+            .execute(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "User could not be deleted", "details": error.to_string() }),
+                    status: Status::NotFound,
+                }
+            })?;
+
+        Ok(())
+    }
 }
 
 #[table_name = "users"]

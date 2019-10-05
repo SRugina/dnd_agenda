@@ -235,6 +235,20 @@ impl Session {
 
         Ok(())
     }
+
+    pub fn delete(session: &Session, connection: &PgConnection) -> Result<(), ApiResponse> {
+        diesel::delete(sessions::table.find(session.id))
+            .execute(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "Session could not be deleted", "details": error.to_string() }),
+                    status: Status::NotFound,
+                }
+            })?;
+
+        Ok(())
+    }
 }
 
 #[derive(Identifiable, Queryable, Debug, Associations, Serialize, Deserialize)]
@@ -247,6 +261,28 @@ pub struct SessionUser {
     pub user_id: i32,
     pub dm_accepted: bool,
     pub user_accepted: bool,
+}
+
+impl SessionUser {
+    pub fn check_user_in_session(
+        session: &Session,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<bool, ApiResponse> {
+        SessionUser::belonging_to(session)
+            .filter(columns::dm_accepted.eq(true))
+            .filter(columns::user_accepted.eq(true))
+            .filter(columns::user_id.eq(user_id))
+            .get_result::<SessionUser>(connection)
+            .map(|_| true)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({ "errors": { "dm": [ "That user is not a member of this session" ] } }),
+                    status: Status::NotFound,
+                }
+            })
+    }
 }
 
 /*
@@ -346,8 +382,6 @@ pub struct UpdateSession {
     colour: Option<String>,
     #[serde(skip)]
     slug: Option<String>,
-
-    // hack to skip the field
     dm: Option<i32>,
 }
 

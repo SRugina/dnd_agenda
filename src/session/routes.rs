@@ -193,8 +193,13 @@ pub fn put_session(
     connection: DnDAgendaDB,
 ) -> Result<ApiResponse, ApiResponse> {
     match auth {
-        Ok(_auth) => {
-            let mut session_details = session.map_err(|json_error| {
+        Ok(auth) => {
+            // get error if there is any (i.e. session does not exist)
+            let session_details =
+                session::Session::find(session_id, &connection).map_err(|response| response)?;
+
+            if auth.id == session_details.dm {
+                let mut session_update_details = session.map_err(|json_error| {
                 match json_error {
                     JsonError::Parse(_req, err) => ApiResponse {
                         json: json!({ "error": err.to_string() }),
@@ -207,59 +212,142 @@ pub fn put_session(
                 }
             })?.into_inner();
 
-            if let Some(ref title) = session_details.title {
-                session_details.slug = Some(slugify(&title));
-            }
+                if let Some(ref title) = session_update_details.title {
+                    session_update_details.slug = Some(slugify(&title));
+                }
 
-            let session_validator_details = session_details.clone();
+                let session_validator_details = session_update_details.clone();
 
-            let empty_flag = true; // i.e. do not emit error if empty
-            let mut extractor = FieldValidator::validate(&session_details);
-            let _title = extractor.extract("title", session_validator_details.title, empty_flag);
-            let _description = extractor.extract(
-                "description",
-                session_validator_details.description,
-                empty_flag,
-            );
-            let _sess_date = extractor.extract(
-                "session_date",
-                session_validator_details.session_date,
-                empty_flag,
-            );
-            let _colour = extractor.extract("colour", session_validator_details.colour, empty_flag);
-
-            extractor.check()?;
-
-            let session_date: Option<DateTime<Utc>>;
-
-            if let Some(ref _date) = session_details.session_date {
-                session_date = Some(
-                    session_details
-                        .session_date
-                        .unwrap()
-                        .parse::<DateTime<Utc>>()
-                        .unwrap(),
+                let empty_flag = true; // i.e. do not emit error if empty
+                let mut extractor = FieldValidator::validate(&session_update_details);
+                let _title =
+                    extractor.extract("title", session_validator_details.title, empty_flag);
+                let _description = extractor.extract(
+                    "description",
+                    session_validator_details.description,
+                    empty_flag,
                 );
+                let _sess_date = extractor.extract(
+                    "session_date",
+                    session_validator_details.session_date,
+                    empty_flag,
+                );
+                let _colour =
+                    extractor.extract("colour", session_validator_details.colour, empty_flag);
+
+                extractor.check()?;
+
+                let session_date: Option<DateTime<Utc>>;
+
+                if let Some(ref _date) = session_update_details.session_date {
+                    session_date = Some(
+                        session_update_details
+                            .session_date
+                            .unwrap()
+                            .parse::<DateTime<Utc>>()
+                            .unwrap(),
+                    );
+                } else {
+                    session_date = None;
+                }
+
+                let update_session = session::UpdateSession {
+                    title: session_update_details.title,
+                    description: session_update_details.description,
+                    session_date,
+                    colour: session_update_details.colour,
+
+                    slug: session_update_details.slug,
+                    dm: None,
+                };
+
+                session::UpdateSession::update(session_id, &update_session, &connection)
+                    .map(|session| ApiResponse {
+                        json: json!({ "session": session }),
+                        status: Status::Ok,
+                    })
+                    .map_err(|response| response)
             } else {
-                session_date = None;
-            }
-
-            let update_session = session::UpdateSession {
-                title: session_details.title,
-                description: session_details.description,
-                session_date,
-                colour: session_details.colour,
-
-                slug: session_details.slug,
-                dm: None,
-            };
-
-            session::UpdateSession::update(session_id, &update_session, &connection)
-                .map(|session| ApiResponse {
-                    json: json!({ "session": session }),
-                    status: Status::Ok,
+                Err(ApiResponse {
+                    json: json!({ "error": "you are not the DM" }),
+                    status: Status::Unauthorized,
                 })
-                .map_err(|response| response)
+            }
+        }
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
+#[derive(Deserialize, Validate, Clone)]
+pub struct UpdateSessionDMData {
+    #[validate(custom = "validate_user_exists")]
+    pub dm: Option<i32>,
+}
+
+#[put("/<session_id>/dm", format = "application/json", data = "<session>")]
+pub fn put_dm_of_session(
+    auth: Result<Auth, JsonValue>,
+    session: Result<Json<UpdateSessionDMData>, JsonError>,
+    session_id: i32,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(auth) => {
+            // get error if there is any (i.e. session does not exist)
+            let session_details =
+                session::Session::find(session_id, &connection).map_err(|response| response)?;
+
+            if auth.id == session_details.dm {
+                let session_update_details = session.map_err(|json_error| {
+                match json_error {
+                    JsonError::Parse(_req, err) => ApiResponse {
+                        json: json!({ "error": err.to_string() }),
+                        status: Status::BadRequest,
+                    },
+                    JsonError::Io(_err) => ApiResponse {
+                        json: json!({ "error": "I/O error occured while reading the incoming request data" }),
+                        status: Status::InternalServerError,
+                    },
+                }
+            })?.into_inner();
+
+                let session_validator_details = session_update_details.clone();
+
+                let empty_flag = true; // i.e. do not emit error if empty
+                let mut extractor = FieldValidator::validate(&session_update_details);
+                let new_dm = extractor.extract("dm", session_validator_details.dm, empty_flag);
+
+                extractor.check()?;
+
+                // we also need to check if the new dm is a member of the session
+                let _user_in_session = session::SessionUser::check_user_in_session(&session_details, new_dm, &connection)
+                    .map_err(|response| response)?;
+
+                let update_session = session::UpdateSession {
+                    title: None,
+                    description: None,
+                    session_date: None,
+                    colour: None,
+                    slug: None,
+
+                    dm: session_update_details.dm,
+                };
+
+                session::UpdateSession::update(session_id, &update_session, &connection)
+                    .map(|session| ApiResponse {
+                        json: json!({ "session": session }),
+                        status: Status::Ok,
+                    })
+                    .map_err(|response| response)
+            } else {
+                Err(ApiResponse {
+                    json: json!({ "error": "you are not the DM" }),
+                    status: Status::Unauthorized,
+                })
+            }
         }
         Err(auth_error) => Err(ApiResponse {
             json: auth_error,
@@ -386,7 +474,7 @@ pub fn accept_invite_to_session(
     }
 }
 
-#[get("/<session_id>/leave", format = "application/json")]
+#[delete("/<session_id>/leave", format = "application/json")]
 pub fn leave_session(
     auth: Result<Auth, JsonValue>,
     session_id: i32,
@@ -408,6 +496,80 @@ pub fn leave_session(
             } else {
                 Err(ApiResponse {
                     json: json!({ "error": "you are the DM, so you cannot leave" }),
+                    status: Status::Unauthorized,
+                })
+            }
+        }
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
+#[delete("/<session_id>")]
+pub fn delete_session(
+    auth: Result<Auth, JsonValue>,
+    session_id: i32,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(auth) => {
+            // get error if there is any (i.e. session does not exist)
+            let session_details =
+                session::Session::find(session_id, &connection).map_err(|response| response)?;
+
+            if auth.id == session_details.dm {
+                session::Session::delete(&session_details, &connection)
+                    .map(|_| ApiResponse {
+                        json: json!({ "message": "session deleted successfully" }),
+                        status: Status::Ok,
+                    })
+                    .map_err(|response| response)
+            } else {
+                Err(ApiResponse {
+                    json: json!({ "error": "you are not the DM" }),
+                    status: Status::Unauthorized,
+                })
+            }
+        }
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
+#[delete("/<session_id>/remove/<user_id>", format = "application/json")]
+pub fn remove_user_from_session(
+    auth: Result<Auth, JsonValue>,
+    session_id: i32,
+    user_id: i32,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(auth) => {
+            // get error if there is any (i.e. session does not exist)
+            let session_details =
+                session::Session::find(session_id, &connection).map_err(|response| response)?;
+
+            if auth.id == session_details.dm {
+                if user_id != auth.id {
+                    session::Session::delete_user(&session_details, user_id, &connection)
+                        .map(|_| ApiResponse {
+                            json: json!({ "message": "removed user from session successfully" }),
+                            status: Status::Ok,
+                        })
+                        .map_err(|response| response)
+                } else {
+                    Err(ApiResponse {
+                        json: json!({ "error": "you are the DM, so you cannot be removed" }),
+                        status: Status::Unauthorized,
+                    })
+                }
+            } else {
+                Err(ApiResponse {
+                    json: json!({ "error": "you are not the DM" }),
                     status: Status::Unauthorized,
                 })
             }

@@ -226,6 +226,76 @@ pub fn put_self(
     }
 }
 
+#[derive(Deserialize, Validate, Clone)]
+pub struct UpdateUserPasswordData {
+    old_password: Option<String>,
+    #[validate(length(min = 8, code = "Password must be at least 8 characters long"))]
+    password: Option<String>,
+}
+
+#[put("/self/pwd", format = "application/json", data = "<user>")]
+pub fn put_pwd_of_self(
+    auth: Result<Auth, JsonValue>,
+    user: Result<Json<UpdateUserPasswordData>, JsonError>,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(auth) => {
+            let user_details = user.map_err(|json_error| {
+                match json_error {
+                    JsonError::Parse(_req, err) => ApiResponse {
+                        json: json!({ "error": err.to_string() }),
+                        status: Status::BadRequest,
+                    },
+                    JsonError::Io(_err) => ApiResponse {
+                        json: json!({ "error": "I/O error occured while reading the incoming request data" }),
+                        status: Status::InternalServerError,
+                    },
+                }
+            })?.into_inner();
+
+            let user_validator_details = user_details.clone();
+
+            let empty_flag1 = true; // i.e. do not emit error if empty
+            let mut extractor1 = FieldValidator::validate(&user_details);
+            let _password =
+                extractor1.extract("password", user_validator_details.password, empty_flag1);
+
+            extractor1.check()?;
+
+            let empty_flag2 = false; // i.e. emit error if empty
+            let mut extractor2 = FieldValidator::default();
+            let _old_password = extractor2.extract(
+                "old_password",
+                user_validator_details.old_password,
+                empty_flag2,
+            );
+            extractor2.check()?;
+
+            //don't use values above because we want to pass on the Option<>, if extractor fails this won't execute anyway
+            let update_user = user::UpdateUser {
+                username: None,
+                email: None,
+                bio: None,
+                image: None,
+
+                password: user_details.password,
+            };
+
+            user::UpdateUser::update(auth.id, &update_user, &connection)
+                .map(|user| ApiResponse {
+                    json: json!({ "user": user }),
+                    status: Status::Ok,
+                })
+                .map_err(|response| response)
+        }
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
 #[get("/<username>/profile", format = "application/json")]
 pub fn get_profile(
     auth: Result<Auth, JsonValue>,
@@ -236,6 +306,25 @@ pub fn get_profile(
         Ok(_auth) => user::User::find_profile(&username, &connection)
             .map(|profile| ApiResponse {
                 json: json!({ "profile": profile }),
+                status: Status::Ok,
+            })
+            .map_err(|response| response),
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
+#[delete("/self")]
+pub fn delete_self(
+    auth: Result<Auth, JsonValue>,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(auth) => user::User::delete(auth.id, &connection)
+            .map(|_| ApiResponse {
+                json: json!({ "message": "user deleted successfully" }),
                 status: Status::Ok,
             })
             .map_err(|response| response),
