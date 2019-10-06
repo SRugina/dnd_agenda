@@ -1,9 +1,10 @@
 use crate::schema::sessions;
+use crate::schema::sessions_guests;
 use crate::schema::sessions_users;
-use crate::schema::sessions_users::columns;
 use crate::schema::users;
 use diesel::prelude::*;
 
+use crate::api::GuestAuth;
 use crate::user::User;
 
 use chrono::{DateTime, Utc};
@@ -69,12 +70,31 @@ impl Session {
         let session = Session::find(session_id, connection).map_err(|response| response)?;
 
         SessionUser::belonging_to(&session)
-            .filter(columns::dm_accepted.eq(true))
-            .filter(columns::user_accepted.eq(true))
+            .filter(sessions_users::columns::dm_accepted.eq(true))
+            .filter(sessions_users::columns::user_accepted.eq(true))
             .inner_join(users::table)
             .select(users::all_columns)
             .load::<User>(connection)
             .map(|users| users)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "Users not found" }),
+                    status: Status::NotFound,
+                }
+            })
+    }
+
+    pub fn read_guests(
+        session_id: i32,
+        connection: &PgConnection,
+    ) -> Result<Vec<(i32, String)>, ApiResponse> {
+        let session = Session::find(session_id, connection).map_err(|response| response)?;
+
+        SessionGuest::belonging_to(&session)
+            .select((sessions_guests::columns::guest_id, sessions_guests::columns::guest_name))
+            .load::<(i32, String)>(connection)
+            .map(|guests| guests)
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {
@@ -115,14 +135,14 @@ impl Session {
         connection: &PgConnection,
     ) -> Result<(), ApiResponse> {
         let session_user = SessionUser::belonging_to(session)
-            .filter(columns::dm_accepted.eq(false))
-            .filter(columns::user_accepted.eq(true))
-            .filter(columns::user_id.eq(user_id))
+            .filter(sessions_users::columns::dm_accepted.eq(false))
+            .filter(sessions_users::columns::user_accepted.eq(true))
+            .filter(sessions_users::columns::user_id.eq(user_id))
             .get_result::<SessionUser>(connection)
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {
-                    json: json!({"error": "SessionUser not found", "details": error.to_string() }),
+                    json: json!({"error": "User not found", "details": error.to_string() }),
                     status: Status::NotFound,
                 }
             })?;
@@ -137,7 +157,7 @@ impl Session {
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {
-                    json: json!({"error": "SessionUser could not be updated", "details": error.to_string() }),
+                    json: json!({"error": "User could not be accepted", "details": error.to_string() }),
                     status: Status::NotFound,
                 }
             })?;
@@ -177,14 +197,14 @@ impl Session {
         connection: &PgConnection,
     ) -> Result<(), ApiResponse> {
         let session_user = SessionUser::belonging_to(session)
-            .filter(columns::dm_accepted.eq(true))
-            .filter(columns::user_accepted.eq(false))
-            .filter(columns::user_id.eq(user_id))
+            .filter(sessions_users::columns::dm_accepted.eq(true))
+            .filter(sessions_users::columns::user_accepted.eq(false))
+            .filter(sessions_users::columns::user_id.eq(user_id))
             .get_result::<SessionUser>(connection)
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {
-                    json: json!({"error": "SessionUser not found", "details": error.to_string() }),
+                    json: json!({"error": "User not found", "details": error.to_string() }),
                     status: Status::NotFound,
                 }
             })?;
@@ -199,7 +219,7 @@ impl Session {
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {
-                    json: json!({"error": "SessionUser could not be updated", "details": error.to_string() }),
+                    json: json!({"error": "Could not accept invite", "details": error.to_string() }),
                     status: Status::NotFound,
                 }
             })?;
@@ -213,12 +233,12 @@ impl Session {
         connection: &PgConnection,
     ) -> Result<(), ApiResponse> {
         let session_user = SessionUser::belonging_to(session)
-            .filter(columns::user_id.eq(user_id))
+            .filter(sessions_users::columns::user_id.eq(user_id))
             .get_result::<SessionUser>(connection)
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {
-                    json: json!({"error": "SessionUser not found", "details": error.to_string() }),
+                    json: json!({"error": "User not found", "details": error.to_string() }),
                     status: Status::NotFound,
                 }
             })?;
@@ -228,7 +248,36 @@ impl Session {
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {
-                    json: json!({"error": "SessionUser could not be updated", "details": error.to_string() }),
+                    json: json!({"error": "User could not be deleted", "details": error.to_string() }),
+                    status: Status::NotFound,
+                }
+            })?;
+
+        Ok(())
+    }
+
+    pub fn delete_guest(
+        session: &Session,
+        guest_id: i32,
+        connection: &PgConnection,
+    ) -> Result<(), ApiResponse> {
+        let session_guest = SessionGuest::belonging_to(session)
+            .filter(sessions_guests::columns::guest_id.eq(guest_id))
+            .get_result::<SessionGuest>(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "Guest not found", "details": error.to_string() }),
+                    status: Status::NotFound,
+                }
+            })?;
+
+        diesel::delete(sessions_guests::table.find((session_guest.session_id, guest_id)))
+            .execute(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "Guest could not be deleted", "details": error.to_string() }),
                     status: Status::NotFound,
                 }
             })?;
@@ -249,6 +298,47 @@ impl Session {
 
         Ok(())
     }
+
+    pub fn create_guest_token(
+        session_id: i32,
+        guest_name: &str,
+        connection: &PgConnection,
+    ) -> Result<String, ApiResponse> {
+        let new_session_guest = &InsertableSessionGuest {
+            session_id,
+            guest_name: guest_name.to_string(),
+        };
+
+        let guest_id = diesel::insert_into(sessions_guests::table)
+            .values(new_session_guest)
+            .get_result::<SessionGuest>(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "Could not create a guest link with that guest name" }),
+                    status: Status::InternalServerError,
+                }
+            })?.guest_id;
+
+        let token = GuestAuth {
+            session_id,
+            guest_id,
+            guest_name: guest_name.to_string(),
+        }
+        .token();
+
+        Ok(token)
+    }
+}
+
+#[derive(Identifiable, Queryable, Debug, Associations, Serialize, Deserialize)]
+#[belongs_to(Session)]
+#[primary_key(session_id, guest_id)]
+#[table_name = "sessions_guests"]
+pub struct SessionGuest {
+    pub session_id: i32,
+    pub guest_id: i32,
+    pub guest_name: String,
 }
 
 #[derive(Identifiable, Queryable, Debug, Associations, Serialize, Deserialize)]
@@ -270,9 +360,9 @@ impl SessionUser {
         connection: &PgConnection,
     ) -> Result<bool, ApiResponse> {
         SessionUser::belonging_to(session)
-            .filter(columns::dm_accepted.eq(true))
-            .filter(columns::user_accepted.eq(true))
-            .filter(columns::user_id.eq(user_id))
+            .filter(sessions_users::columns::dm_accepted.eq(true))
+            .filter(sessions_users::columns::user_accepted.eq(true))
+            .filter(sessions_users::columns::user_id.eq(user_id))
             .get_result::<SessionUser>(connection)
             .map(|_| true)
             .map_err(|error| {
@@ -318,6 +408,13 @@ pub struct InsertableSessionUser {
     pub user_id: i32,
     pub dm_accepted: bool,
     pub user_accepted: bool,
+}
+
+#[table_name = "sessions_guests"]
+#[derive(Serialize, Deserialize, Insertable, AsChangeset)]
+pub struct InsertableSessionGuest {
+    pub session_id: i32,
+    pub guest_name: String,
 }
 
 impl InsertableSession {

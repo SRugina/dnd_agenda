@@ -10,6 +10,7 @@ use crate::api::Auth;
 use rocket::http::Status;
 
 use crate::api::FieldValidator;
+use bcrypt::{hash, DEFAULT_COST};
 use validator::Validate;
 
 #[get("/")]
@@ -170,8 +171,8 @@ pub struct UpdateUserData {
     image: Option<String>,
 }
 
-#[put("/self", format = "application/json", data = "<user>")]
-pub fn put_self(
+#[patch("/self", format = "application/json", data = "<user>")]
+pub fn patch_self(
     auth: Result<Auth, JsonValue>,
     user: Result<Json<UpdateUserData>, JsonError>,
     connection: DnDAgendaDB,
@@ -233,8 +234,8 @@ pub struct UpdateUserPasswordData {
     password: Option<String>,
 }
 
-#[put("/self/pwd", format = "application/json", data = "<user>")]
-pub fn put_pwd_of_self(
+#[patch("/self/pwd", format = "application/json", data = "<user>")]
+pub fn patch_pwd_of_self(
     auth: Result<Auth, JsonValue>,
     user: Result<Json<UpdateUserPasswordData>, JsonError>,
     connection: DnDAgendaDB,
@@ -256,38 +257,52 @@ pub fn put_pwd_of_self(
 
             let user_validator_details = user_details.clone();
 
-            let empty_flag1 = true; // i.e. do not emit error if empty
-            let mut extractor1 = FieldValidator::validate(&user_details);
-            let _password =
-                extractor1.extract("password", user_validator_details.password, empty_flag1);
-
-            extractor1.check()?;
-
-            let empty_flag2 = false; // i.e. emit error if empty
-            let mut extractor2 = FieldValidator::default();
-            let _old_password = extractor2.extract(
+            let empty_flag = false; // i.e. emit error if empty
+            let mut extractor = FieldValidator::validate(&user_details);
+            let old_password = extractor.extract(
                 "old_password",
                 user_validator_details.old_password,
-                empty_flag2,
+                empty_flag,
             );
-            extractor2.check()?;
+            let password =
+                extractor.extract("password", user_validator_details.password, empty_flag);
 
-            //don't use values above because we want to pass on the Option<>, if extractor fails this won't execute anyway
-            let update_user = user::UpdateUser {
-                username: None,
-                email: None,
-                bio: None,
-                image: None,
+            extractor.check()?;
 
-                password: user_details.password,
-            };
+            let password_matches = user::User::check_password(old_password, auth.id, &connection)
+                .map_err(|response| response)?;
 
-            user::UpdateUser::update(auth.id, &update_user, &connection)
-                .map(|user| ApiResponse {
-                    json: json!({ "user": user }),
-                    status: Status::Ok,
+            if password_matches {
+                let new_password = hash(password, DEFAULT_COST)
+                    .map_err(|error| {
+                        println!("Cannot hash password: {:#?}", error);
+                        ApiResponse {
+                            json: json!({"error": "error hashing" }),
+                            status: Status::InternalServerError,
+                        }
+                    })
+                    .ok();
+                let update_user = user::UpdateUser {
+                    username: None,
+                    email: None,
+                    bio: None,
+                    image: None,
+
+                    password: new_password,
+                };
+
+                user::UpdateUser::update(auth.id, &update_user, &connection)
+                    .map(|_| ApiResponse {
+                        json: json!({ "message": "password changed successfully" }),
+                        status: Status::Ok,
+                    })
+                    .map_err(|response| response)
+            } else {
+                Err(ApiResponse {
+                    json: json!({ "errors": { "old_password": [ "does not match current password" ] } }),
+                    status: Status::UnprocessableEntity,
                 })
-                .map_err(|response| response)
+            }
         }
         Err(auth_error) => Err(ApiResponse {
             json: auth_error,

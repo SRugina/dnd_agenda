@@ -11,6 +11,14 @@ table! {
 }
 
 table! {
+    sessions_guests (session_id, guest_id) {
+        session_id -> Int4,
+        guest_id -> Int4,
+        guest_name -> Text,
+    }
+}
+
+table! {
     sessions_users (session_id, user_id) {
         session_id -> Int4,
         user_id -> Int4,
@@ -31,11 +39,13 @@ table! {
 }
 
 joinable!(sessions -> users (dm));
+joinable!(sessions_guests -> sessions (session_id));
 joinable!(sessions_users -> sessions (session_id));
 joinable!(sessions_users -> users (user_id));
 
 allow_tables_to_appear_in_same_query!(
     sessions,
+    sessions_guests,
     sessions_users,
     users,
 );

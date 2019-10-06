@@ -50,7 +50,6 @@ impl User {
         let exp = Utc::now() + Duration::hours(1);
         let token = Auth {
             id: self.id,
-            username: self.username.clone(),
             exp: exp.timestamp(),
         }
         .token();
@@ -71,6 +70,31 @@ impl User {
             bio: self.bio.clone(),
             image: self.image.clone(),
         }
+    }
+
+    pub fn check_password(
+        old_password: String,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<bool, ApiResponse> {
+        let user = users::table
+            .find(user_id)
+            .first::<User>(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "User not found" }),
+                    status: Status::NotFound,
+                }
+            })?;
+
+        verify(old_password, &user.password).map_err(|error| {
+            println!("Error: {}", error);
+            ApiResponse {
+                json: json!({"error": "verifying failed", "details": error.to_string() }),
+                status: Status::InternalServerError,
+            }
+        })
     }
 
     pub fn login(

@@ -34,7 +34,6 @@ pub struct Auth {
     pub exp: i64,
     /// user id
     pub id: i32,
-    pub username: String,
 }
 
 impl Auth {
@@ -104,6 +103,49 @@ fn decode_token(token: &str) -> Option<Auth> {
         eprintln!("Auth decode error: {:?}", err);
         None
     })
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct GuestAuth {
+    pub session_id: i32,
+    pub guest_id: i32,
+    pub guest_name: String,
+}
+
+impl GuestAuth {
+    pub fn token(&self) -> String {
+        let headers = json!({});
+        let payload = json!(self);
+        jwt::encode(
+            headers.0,
+            &config::SECRET.to_string(),
+            &payload,
+            jwt::Algorithm::HS256,
+        )
+        .expect("jwt")
+    }
+
+    /// Decode guest token into `GuestAuth` struct. If any error is encountered, log it
+    /// an return None.
+    pub fn decode_guest_token(token: &str) -> Option<GuestAuth> {
+        jwt::decode(
+            token,
+            &config::SECRET.to_string(),
+            jwt::Algorithm::HS256,
+            &jwt::ValidationOptions::dangerous(),
+        )
+        .map(|(_, payload)| {
+            serde_json::from_value::<GuestAuth>(payload)
+                .map_err(|err| {
+                    eprintln!("Auth serde decode error: {:?}", err);
+                })
+                .ok()
+        })
+        .unwrap_or_else(|err| {
+            eprintln!("Auth decode error: {:?}", err);
+            None
+        })
+    }
 }
 
 pub struct FieldValidator {

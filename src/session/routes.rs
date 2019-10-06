@@ -7,6 +7,8 @@ use rocket_contrib::json::JsonValue;
 
 use crate::api::ApiResponse;
 use crate::api::Auth;
+use crate::api::GuestAuth;
+use rocket::http::RawStr;
 use rocket::http::Status;
 
 use crate::api::validate_colour;
@@ -94,7 +96,7 @@ pub struct NewSession {
     pub dm: Option<i32>,
     #[validate(regex(
         path = "SESSION_DATE_FORMAT",
-        code = "must be valid ouput of JS toISOString()"
+        code = "must be valid output of JS toISOString()"
     ))]
     pub session_date: Option<String>,
     #[validate(custom = "validate_colour")]
@@ -177,7 +179,7 @@ pub struct UpdateSessionData {
     pub description: Option<String>,
     #[validate(regex(
         path = "SESSION_DATE_FORMAT",
-        code = "must be valid ouput of JS toISOString()"
+        code = "must be valid output of JS toISOString()"
     ))]
     pub session_date: Option<String>,
     #[validate(custom = "validate_colour")]
@@ -185,8 +187,8 @@ pub struct UpdateSessionData {
     slug: Option<String>,
 }
 
-#[put("/<session_id>", format = "application/json", data = "<session>")]
-pub fn put_session(
+#[patch("/<session_id>", format = "application/json", data = "<session>")]
+pub fn patch_session(
     auth: Result<Auth, JsonValue>,
     session: Result<Json<UpdateSessionData>, JsonError>,
     session_id: i32,
@@ -287,8 +289,8 @@ pub struct UpdateSessionDMData {
     pub dm: Option<i32>,
 }
 
-#[put("/<session_id>/dm", format = "application/json", data = "<session>")]
-pub fn put_dm_of_session(
+#[patch("/<session_id>/dm", format = "application/json", data = "<session>")]
+pub fn patch_dm_of_session(
     auth: Result<Auth, JsonValue>,
     session: Result<Json<UpdateSessionDMData>, JsonError>,
     session_id: i32,
@@ -323,8 +325,12 @@ pub fn put_dm_of_session(
                 extractor.check()?;
 
                 // we also need to check if the new dm is a member of the session
-                let _user_in_session = session::SessionUser::check_user_in_session(&session_details, new_dm, &connection)
-                    .map_err(|response| response)?;
+                let _user_in_session = session::SessionUser::check_user_in_session(
+                    &session_details,
+                    new_dm,
+                    &connection,
+                )
+                .map_err(|response| response)?;
 
                 let update_session = session::UpdateSession {
                     title: None,
@@ -462,7 +468,7 @@ pub fn accept_invite_to_session(
 
             session::Session::accept_invite_to_join(&session_details, auth.id, &connection)
                 .map(|_| ApiResponse {
-                    json: json!({ "message": "requested to join session successfully" }),
+                    json: json!({ "message": "Joined session successfully" }),
                     status: Status::Ok,
                 })
                 .map_err(|response| response)
@@ -578,6 +584,129 @@ pub fn remove_user_from_session(
             json: auth_error,
             status: Status::Unauthorized,
         }),
+    }
+}
+
+#[get("/<session_id>/guest_link/<guest_name>")]
+pub fn get_guest_link(
+    auth: Result<Auth, JsonValue>,
+    session_id: i32,
+    guest_name: String,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(auth) => {
+            // get error if there is any (i.e. session does not exist)
+            let session_details =
+                session::Session::find(session_id, &connection).map_err(|response| response)?;
+
+            if auth.id == session_details.dm {
+                session::Session::create_guest_token(session_details.id, &guest_name, &connection)
+                    .map(|guest_token| ApiResponse {
+                        json: json!({
+                            "guest_link":
+                                format!(
+                                    "http://localhost:8000/#/session/{}?guest={}",
+                                    session_details.slug, guest_token
+                                )
+                        }),
+                        status: Status::Ok,
+                    })
+                    .map_err(|response| response)
+            } else {
+                Err(ApiResponse {
+                    json: json!({ "error": "you are not the DM" }),
+                    status: Status::Unauthorized,
+                })
+            }
+        }
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
+#[get("/<session_id>/guest/<guest_token>")]
+pub fn get_session_as_guest(
+    session_id: i32,
+    guest_token: &RawStr,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    if let Some(guest_auth) = GuestAuth::decode_guest_token(guest_token.as_str()) {
+        if guest_auth.session_id == session_id {
+            session::Session::find(session_id, &connection)
+                .map(|session| ApiResponse {
+                    json: json!({ "session": session }),
+                    status: Status::Ok,
+                })
+                .map_err(|response| response)
+        } else {
+            Err(ApiResponse {
+                json: json!({ "error": "this guest link is not valid for that session" }),
+                status: Status::Unauthorized,
+            })
+        }
+    } else {
+        Err(ApiResponse {
+            json: json!({ "error": "not a valid guest link" }),
+            status: Status::Unauthorized,
+        })
+    }
+}
+
+#[delete("/<session_id>/guest/<guest_id>")]
+pub fn remove_guest_from_session(
+    auth: Result<Auth, JsonValue>,
+    session_id: i32,
+    guest_id: i32,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(auth) => {
+            // get error if there is any (i.e. session does not exist)
+            let session_details =
+                session::Session::find(session_id, &connection).map_err(|response| response)?;
+
+            if auth.id == session_details.dm {
+                session::Session::delete_guest(&session_details, guest_id, &connection)
+                    .map(|_| ApiResponse {
+                        json: json!({ "message": "removed guest from session successfully" }),
+                        status: Status::Ok,
+                    })
+                    .map_err(|response| response)
+            } else {
+                Err(ApiResponse {
+                    json: json!({ "error": "you are not the DM" }),
+                    status: Status::Unauthorized,
+                })
+            }
+        }
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
+#[get("/<session_id>/guests")]
+pub fn get_guests(
+    auth: Result<Auth, JsonValue>,
+    session_id: i32,
+    connection: DnDAgendaDB,
+) -> ApiResponse {
+    match auth {
+        Ok(_auth) => match session::Session::read_guests(session_id, &connection) {
+            Ok(guests) => ApiResponse {
+                json: json!({ "guests": guests }),
+                status: Status::Ok,
+            },
+            Err(response) => response,
+        },
+        Err(auth_error) => ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        },
     }
 }
 
