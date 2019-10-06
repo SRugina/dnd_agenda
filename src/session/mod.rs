@@ -6,6 +6,7 @@ use diesel::prelude::*;
 
 use crate::api::GuestAuth;
 use crate::user::User;
+use crate::user::Profile;
 
 use chrono::{DateTime, Utc};
 
@@ -66,7 +67,7 @@ impl Session {
     pub fn read_users(
         session_id: i32,
         connection: &PgConnection,
-    ) -> Result<Vec<User>, ApiResponse> {
+    ) -> Result<Vec<Profile>, ApiResponse> {
         let session = Session::find(session_id, connection).map_err(|response| response)?;
 
         SessionUser::belonging_to(&session)
@@ -75,7 +76,7 @@ impl Session {
             .inner_join(users::table)
             .select(users::all_columns)
             .load::<User>(connection)
-            .map(|users| users)
+            .map(|users| users.iter().map(|user| user.to_profile()).collect())
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {

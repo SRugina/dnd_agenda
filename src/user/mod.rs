@@ -130,11 +130,11 @@ impl User {
         }
     }
 
-    pub fn read(connection: &PgConnection) -> Result<Vec<User>, ApiResponse> {
+    pub fn read(connection: &PgConnection) -> Result<Vec<Profile>, ApiResponse> {
         users::table
             .order(users::id)
             .load::<User>(connection)
-            .map(|users| users)
+            .map(|users| users.iter().map(|user| user.to_profile()).collect())
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {
