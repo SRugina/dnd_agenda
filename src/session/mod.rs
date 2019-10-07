@@ -2,12 +2,14 @@ use crate::schema::sessions;
 use crate::schema::sessions_guests;
 use crate::schema::sessions_users;
 use crate::schema::users;
+use diesel::dsl::Nullable;
 use diesel::prelude::*;
 
 use crate::api::GuestAuth;
-use crate::user::User;
 use crate::user::Profile;
+use crate::user::User;
 
+use crate::config::DATE_FORMAT;
 use chrono::{DateTime, Utc};
 
 pub mod routes;
@@ -35,12 +37,60 @@ pub struct UpdateSessionUser {
     user_accepted: bool,
 }
 
+#[derive(FromForm, Default)]
+pub struct FindSessions {
+    dm: Option<String>,
+    /// favorited by user
+    favorited: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionJson {
+    pub id: i32,
+    pub slug: String,
+    pub title: String,
+    pub description: String,
+    pub dm: Profile,
+    pub session_date: String,
+    pub colour: String,
+    pub members: Vec<Profile>,
+    pub guests: Vec<(i32, String)>,
+}
+
 impl Session {
-    pub fn read(connection: &PgConnection) -> Result<Vec<Session>, ApiResponse> {
+    pub fn attach(
+        self,
+        dm: Profile,
+        members: Vec<Profile>,
+        guests: Vec<(i32, String)>,
+    ) -> SessionJson {
+        SessionJson {
+            id: self.id,
+            slug: self.slug,
+            title: self.title,
+            description: self.description,
+            dm,
+            session_date: self.session_date.format(DATE_FORMAT).to_string(),
+            colour: self.colour,
+            members,
+            guests,
+        }
+    }
+    pub fn read(connection: &PgConnection) -> Result<Vec<SessionJson>, ApiResponse> {
         sessions::table
             .order(sessions::id)
-            .load::<Session>(connection)
-            .map(|sessions| sessions)
+            .inner_join(users::table) // dm details
+            .select((sessions::all_columns, users::all_columns))
+            .load::<(Session, User)>(connection)
+            .map(|sessions| {
+                sessions
+                    .iter()
+                    .map(|(session, dm)| populate(session, dm))
+                    .collect()
+            })
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {
@@ -50,11 +100,17 @@ impl Session {
             })
     }
 
-    pub fn find(session_id: i32, connection: &PgConnection) -> Result<Session, ApiResponse> {
+    pub fn find(session_id: i32, connection: &PgConnection) -> Result<SessionJson, ApiResponse> {
         sessions::table
             .find(session_id)
-            .first::<Session>(connection)
-            .map(|session| session)
+            .inner_join(users::table) // dm details
+            .select((sessions::all_columns, users::all_columns))
+            .first::<(Session, User)>(connection)
+            .map(|(session, dm)| {
+                populate(session, dm, connection)
+                    .map(|session_json| session_json)
+                    .map_err(|response| response)
+            })
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {
@@ -93,7 +149,10 @@ impl Session {
         let session = Session::find(session_id, connection).map_err(|response| response)?;
 
         SessionGuest::belonging_to(&session)
-            .select((sessions_guests::columns::guest_id, sessions_guests::columns::guest_name))
+            .select((
+                sessions_guests::columns::guest_id,
+                sessions_guests::columns::guest_name,
+            ))
             .load::<(i32, String)>(connection)
             .map(|guests| guests)
             .map_err(|error| {
@@ -319,7 +378,8 @@ impl Session {
                     json: json!({"error": "Could not create a guest link with that guest name" }),
                     status: Status::InternalServerError,
                 }
-            })?.guest_id;
+            })?
+            .guest_id;
 
         let token = GuestAuth {
             session_id,
@@ -501,4 +561,31 @@ impl UpdateSession {
                 }
             })
     }
+}
+
+fn populate(
+    session: Session,
+    dm: Profile,
+    connection: &PgConnection,
+) -> Result<SessionJson, ApiResponse> {
+    let members = SessionUser::belonging_to(&session)
+        .filter(sessions_users::columns::dm_accepted.eq(true))
+        .filter(sessions_users::columns::user_accepted.eq(true))
+        .inner_join(users::table)
+        .select(users::all_columns)
+        .load::<User>(connection)
+        .map(|users| users.iter().map(|user| user.to_profile()).collect())
+        .map_err(|error| {
+            println!("Error: {:#?}", error);
+            ApiResponse {
+                json: json!({"error": "Users not found" }),
+                status: Status::NotFound,
+            }
+        });
+    let guests = users::table
+        .find(session.dm)
+        .get_result::<User>(connection)
+        .expect("Error loading author");
+
+    Ok(session.attach(dm, members, guests))
 }
