@@ -574,18 +574,23 @@ fn populate(
         .inner_join(users::table)
         .select(users::all_columns)
         .load::<User>(connection)
-        .map(|users| users.iter().map(|user| user.to_profile()).collect())
         .map_err(|error| {
             println!("Error: {:#?}", error);
             ApiResponse {
                 json: json!({"error": "Users not found" }),
                 status: Status::NotFound,
             }
-        });
-    let guests = users::table
-        .find(session.dm)
-        .get_result::<User>(connection)
-        .expect("Error loading author");
+        })?.iter().map(|user| user.to_profile()).collect();
+    let guests = SessionGuest::belonging_to(&session)
+        .select(sessions_guests::guest_id, sessions_guests::guest_name)
+        .load::<(i32, String)>(connection)
+        .map_err(|error| {
+            println!("Error: {:#?}", error);
+            ApiResponse {
+                json: json!({"error": "Users not found" }),
+                status: Status::NotFound,
+            }
+        })?.iter().map(|user| user.to_profile()).collect();
 
     Ok(session.attach(dm, members, guests))
 }
