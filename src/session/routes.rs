@@ -710,12 +710,6 @@ pub fn get_guests(
     }
 }
 
-fn slugify(title: &str) -> String {let dm = User::find(new_session.dm, connection)
-                    .map(|user| user.to_profile())
-                    .map_err(|response| response);
-
-                populate(&new_session, dm, connection)
-                    .map(|session_json| session_json)
-                    .map_err(|response| response)
+fn slugify(title: &str) -> String {
     slug::slugify(title)
 }
