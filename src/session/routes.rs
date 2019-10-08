@@ -51,9 +51,9 @@ pub fn get_session(
     connection: DnDAgendaDB,
 ) -> ApiResponse {
     match auth {
-        Ok(_auth) => match session::Session::find(session_id, &connection) {
-            Ok(session) => ApiResponse {
-                json: json!({ "session": session }),
+        Ok(_auth) => match session::Session::find_as_json(session_id, &connection) {
+            Ok(session_json) => ApiResponse {
+                json: json!({ "session": session_json }),
                 status: Status::Ok,
             },
             Err(response) => response,
@@ -636,8 +636,8 @@ pub fn get_session_as_guest(
     if let Some(guest_auth) = GuestAuth::decode_guest_token(guest_token.as_str()) {
         if guest_auth.session_id == session_id {
             session::Session::find(session_id, &connection)
-                .map(|session| ApiResponse {
-                    json: json!({ "session": session }),
+                .map(|session_json| ApiResponse {
+                    json: json!({ "session": session_json }),
                     status: Status::Ok,
                 })
                 .map_err(|response| response)
@@ -710,6 +710,12 @@ pub fn get_guests(
     }
 }
 
-fn slugify(title: &str) -> String {
+fn slugify(title: &str) -> String {let dm = User::find(new_session.dm, connection)
+                    .map(|user| user.to_profile())
+                    .map_err(|response| response);
+
+                populate(&new_session, dm, connection)
+                    .map(|session_json| session_json)
+                    .map_err(|response| response)
     slug::slugify(title)
 }
