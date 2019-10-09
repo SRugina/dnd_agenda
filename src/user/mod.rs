@@ -181,15 +181,26 @@ impl User {
         session::SessionUser::belonging_to(&user)
             .inner_join(sessions::table)
             .select(sessions::all_columns)
+            .order(sessions::session_date.desc())
             .load::<session::Session>(connection)
-            .map(|sessions| sessions.iter().map(|session| populate(session, )).collect())
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {
                     json: json!({"error": "Sessions not found" }),
                     status: Status::NotFound,
                 }
+            })?
+            .iter()
+            .map(|session| {
+                let dm = User::find(session.dm, connection)
+                    .map(|user| user.to_profile())
+                    .map_err(|response| response)?;
+
+                session::populate(&session, dm, connection)
+                    .map(|session_json| session_json)
+                    .map_err(|response| response)
             })
+            .collect()
     }
 
     pub fn delete(user_id: i32, connection: &PgConnection) -> Result<(), ApiResponse> {

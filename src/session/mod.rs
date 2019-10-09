@@ -78,7 +78,7 @@ impl Session {
     }
     pub fn read(connection: &PgConnection) -> Result<Vec<SessionJson>, ApiResponse> {
         sessions::table
-            .order(sessions::id)
+            .order(sessions::session_date.desc())
             .inner_join(users::table) // dm details
             .select((sessions::all_columns, users::all_columns))
             .load::<(Session, User)>(connection)
@@ -581,8 +581,8 @@ impl UpdateSession {
             })?;
 
         let dm = User::find(updated_session.dm, connection)
-                    .map(|user| user.to_profile())
-                    .map_err(|response| response)?;
+            .map(|user| user.to_profile())
+            .map_err(|response| response)?;
 
         populate(&updated_session, dm, connection)
             .map(|session_json| session_json)
@@ -590,7 +590,7 @@ impl UpdateSession {
     }
 }
 
-fn populate(
+pub fn populate(
     session: &Session,
     dm: Profile,
     connection: &PgConnection,
