@@ -175,14 +175,14 @@ impl User {
     pub fn read_sessions(
         user_id: i32,
         connection: &PgConnection,
-    ) -> Result<Vec<session::Session>, ApiResponse> {
+    ) -> Result<Vec<session::SessionJson>, ApiResponse> {
         let user = User::find(user_id, connection).map_err(|response| response)?;
 
         session::SessionUser::belonging_to(&user)
             .inner_join(sessions::table)
             .select(sessions::all_columns)
             .load::<session::Session>(connection)
-            .map(|sessions| sessions)
+            .map(|sessions| sessions.iter().map(|session| populate(session, )).collect())
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {

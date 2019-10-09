@@ -39,8 +39,6 @@ pub struct UpdateSessionUser {
 #[derive(FromForm, Default)]
 pub struct FindSessions {
     dm: Option<String>,
-    /// favorited by user
-    favorited: Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
 }
@@ -533,7 +531,9 @@ impl InsertableSession {
                 Ok(new_session)
             }) {
             Ok(session) => {
-                let dm = User::find(session.dm, connection).map(|user| user.to_profile()).map_err(|response| response);
+                let dm = User::find(session.dm, connection)
+                    .map(|user| user.to_profile())
+                    .map_err(|response| response)?;
 
                 populate(&session, dm, connection)
                     .map(|session_json| session_json)
@@ -568,18 +568,25 @@ impl UpdateSession {
         id: i32,
         session: &UpdateSession,
         connection: &PgConnection,
-    ) -> Result<Session, ApiResponse> {
-        diesel::update(sessions::table.find(id))
+    ) -> Result<SessionJson, ApiResponse> {
+        let updated_session = diesel::update(sessions::table.find(id))
             .set(session)
             .get_result::<Session>(connection)
-            .map(|session| session)
             .map_err(|error| {
                 println!("Cannot update session: {:#?}", error);
                 ApiResponse {
                     json: json!({ "error": "cannot update session" }),
                     status: Status::UnprocessableEntity,
                 }
-            })
+            })?;
+
+        let dm = User::find(updated_session.dm, connection)
+                    .map(|user| user.to_profile())
+                    .map_err(|response| response)?;
+
+        populate(&updated_session, dm, connection)
+            .map(|session_json| session_json)
+            .map_err(|response| response)
     }
 }
 
