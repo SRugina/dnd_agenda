@@ -23,6 +23,7 @@ mod schema;
 
 mod config;
 
+mod group;
 mod session;
 mod user;
 

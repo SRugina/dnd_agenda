@@ -8,6 +8,9 @@ use crate::api::GuestAuth;
 use crate::user::Profile;
 use crate::user::User;
 
+use crate::group::{Group, GroupSession, GroupUser};
+use crate::schema::{groups, groups_sessions, groups_users};
+
 use crate::config::DATE_FORMAT;
 use chrono::{DateTime, Utc};
 
@@ -15,6 +18,8 @@ pub mod routes;
 
 use crate::api::ApiResponse;
 use rocket::http::Status;
+
+const DEFAULT_LIMIT: i64 = 20;
 
 #[table_name = "sessions"]
 #[derive(Debug, Identifiable, AsChangeset, Serialize, Deserialize, Queryable)]
@@ -76,11 +81,58 @@ impl Session {
             guests,
         }
     }
-    pub fn read(connection: &PgConnection) -> Result<Vec<SessionJson>, ApiResponse> {
+    pub fn read(
+        params: &FindSessions,
+        connection: &PgConnection,
+        user_id: i32,
+    ) -> Result<Vec<SessionJson>, ApiResponse> {
+        let user = User::find(user_id, connection).map_err(|response| response)?;
+        // get all sessions belonging to the same groups as the user
+        let sessions: Vec<SessionJson> = GroupUser::belonging_to(&user)
+            .filter(groups_users::columns::admin_accepted.eq(true))
+            .filter(groups_users::columns::user_accepted.eq(true))
+            .inner_join(groups::table)
+            .select(groups::all_columns)
+            .load::<Group>(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "Group not found" }),
+                    status: Status::NotFound,
+                }
+            })?
+            .iter()
+            .flat_map::<Vec<_>, _>(|group| {
+                GroupSession::belonging_to(group)
+                    .inner_join(sessions::table.inner_join(users::table)) // dm details
+                    .order(sessions::session_date.desc())
+                    .select((sessions::all_columns, users::all_columns))
+                    .limit(params.limit.unwrap_or(DEFAULT_LIMIT))
+                    .offset(params.offset.unwrap_or(0))
+                    .load::<(Session, User)>(connection)
+                    .unwrap()
+                    // .map_err(|error| {
+                    //     println!("Error: {:#?}", error);
+                    //     ApiResponse {
+                    //         json: json!({"error": "Sessions not found" }),
+                    //         status: Status::NotFound,
+                    //     }
+                    // })
+                    .iter()
+                    .map(|(session, dm)| {
+                        populate(session, dm.to_profile(), connection).unwrap()
+                        // .map(|session_json| session_json)
+                        // .map_err(|response| response)
+                    })
+                    .collect()
+            })
+            .collect();
         sessions::table
             .order(sessions::session_date.desc())
             .inner_join(users::table) // dm details
             .select((sessions::all_columns, users::all_columns))
+            .limit(params.limit.unwrap_or(DEFAULT_LIMIT))
+            .offset(params.offset.unwrap_or(0))
             .load::<(Session, User)>(connection)
             .map_err(|error| {
                 println!("Error: {:#?}", error);
