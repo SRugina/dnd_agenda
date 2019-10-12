@@ -5,6 +5,8 @@ use rocket_contrib::json::Json;
 use rocket_contrib::json::JsonError;
 use rocket_contrib::json::JsonValue;
 
+use rocket::request::Form;
+
 use crate::api::ApiResponse;
 use crate::api::Auth;
 use crate::api::GuestAuth;
@@ -27,12 +29,16 @@ lazy_static! {
         Regex::new(r"\d{4,}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z").unwrap();
 }
 
-#[get("/")]
-pub fn get_all(auth: Result<Auth, JsonValue>, connection: DnDAgendaDB) -> ApiResponse {
+#[get("/?<params..>")]
+pub fn get_all(
+    auth: Result<Auth, JsonValue>,
+    params: Form<session::FindSessions>,
+    connection: DnDAgendaDB,
+) -> ApiResponse {
     match auth {
-        Ok(_auth) => match session::Session::read(&connection) {
+        Ok(auth) => match session::Session::read(&params, auth.id, &connection) {
             Ok(sessions) => ApiResponse {
-                json: json!({ "sessions": sessions }),
+                json: json!({ "sessions": sessions, "sessionsCount": sessions.len()  }),
                 status: Status::Ok,
             },
             Err(response) => response,

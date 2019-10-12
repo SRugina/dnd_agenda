@@ -43,7 +43,7 @@ pub struct UpdateSessionUser {
 
 #[derive(FromForm, Default)]
 pub struct FindSessions {
-    dm: Option<String>,
+    // dm: Option<String>,
     limit: Option<i64>,
     offset: Option<i64>,
 }
@@ -83,12 +83,13 @@ impl Session {
     }
     pub fn read(
         params: &FindSessions,
-        connection: &PgConnection,
         user_id: i32,
-    ) -> Result<Vec<SessionJson>, ApiResponse> {
+        connection: &PgConnection,
+    ) -> Result<Vec<Vec<SessionJson>>, ApiResponse> {
         let user = User::find(user_id, connection).map_err(|response| response)?;
         // get all sessions belonging to the same groups as the user
-        let sessions: Vec<SessionJson> = GroupUser::belonging_to(&user)
+        // let sessions: Result<Vec<Vec<SessionJson>>, ApiResponse> =
+        GroupUser::belonging_to(&user)
             .filter(groups_users::columns::admin_accepted.eq(true))
             .filter(groups_users::columns::user_accepted.eq(true))
             .inner_join(groups::table)
@@ -102,7 +103,7 @@ impl Session {
                 }
             })?
             .iter()
-            .flat_map::<Vec<_>, _>(|group| {
+            .map(|group| {
                 GroupSession::belonging_to(group)
                     .inner_join(sessions::table.inner_join(users::table)) // dm details
                     .order(sessions::session_date.desc())
@@ -110,44 +111,19 @@ impl Session {
                     .limit(params.limit.unwrap_or(DEFAULT_LIMIT))
                     .offset(params.offset.unwrap_or(0))
                     .load::<(Session, User)>(connection)
-                    .unwrap()
-                    // .map_err(|error| {
-                    //     println!("Error: {:#?}", error);
-                    //     ApiResponse {
-                    //         json: json!({"error": "Sessions not found" }),
-                    //         status: Status::NotFound,
-                    //     }
-                    // })
+                    .map_err(|error| {
+                        println!("Error: {:#?}", error);
+                        ApiResponse {
+                            json: json!({"error": "Sessions not found" }),
+                            status: Status::NotFound,
+                        }
+                    })?
                     .iter()
-                    .map(|(session, dm)| {
-                        populate(session, dm.to_profile(), connection).unwrap()
-                        // .map(|session_json| session_json)
-                        // .map_err(|response| response)
-                    })
-                    .collect()
+                    .map(|(session, dm)| populate(session, dm.to_profile(), connection))
+                    .collect::<Result<Vec<_>, _>>()
             })
-            .collect();
-        sessions::table
-            .order(sessions::session_date.desc())
-            .inner_join(users::table) // dm details
-            .select((sessions::all_columns, users::all_columns))
-            .limit(params.limit.unwrap_or(DEFAULT_LIMIT))
-            .offset(params.offset.unwrap_or(0))
-            .load::<(Session, User)>(connection)
-            .map_err(|error| {
-                println!("Error: {:#?}", error);
-                ApiResponse {
-                    json: json!({"error": "Sessions not found" }),
-                    status: Status::NotFound,
-                }
-            })?
-            .iter()
-            .map(|(session, dm)| {
-                populate(session, dm.to_profile(), connection)
-                    .map(|session_json| session_json)
-                    .map_err(|response| response)
-            })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()
+        // .map(|session_jsons| session_jsons.into_iter().flatten().collect())
     }
 
     pub fn find(session_id: i32, connection: &PgConnection) -> Result<Session, ApiResponse> {
@@ -546,6 +522,7 @@ impl InsertableSession {
     pub fn create(
         session: InsertableSession,
         creator_id: i32,
+        group_id: i32,
         connection: &PgConnection,
     ) -> Result<SessionJson, ApiResponse> {
         match connection
@@ -558,6 +535,16 @@ impl InsertableSession {
                 let new_session_user = &InsertableSessionUser {
                     session_id: new_session.id,
                     user_id: new_session.dm,
+                    dm_accepted: true,
+                    user_accepted: true,
+                };
+
+                diesel::insert_into(sessions_users::table)
+                    .values(new_session_user)
+                    .get_result::<SessionUser>(connection)?;
+                let new_group_session = &InsertableGroupSession {
+                    group_id: group_id,
+                    session_id: new_session.dm,
                     dm_accepted: true,
                     user_accepted: true,
                 };
