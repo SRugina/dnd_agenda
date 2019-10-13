@@ -8,8 +8,8 @@ use crate::api::GuestAuth;
 use crate::user::Profile;
 use crate::user::User;
 
-use crate::group::{Group, GroupSession, GroupUser};
-use crate::schema::{groups, groups_sessions, groups_users};
+use crate::group::{Group, GroupUser};
+use crate::schema::{groups, groups_users};
 
 use crate::config::DATE_FORMAT;
 use chrono::{DateTime, Utc};
@@ -22,7 +22,8 @@ use rocket::http::Status;
 const DEFAULT_LIMIT: i64 = 20;
 
 #[table_name = "sessions"]
-#[derive(Debug, Identifiable, AsChangeset, Serialize, Deserialize, Queryable)]
+#[belongs_to(Group)]
+#[derive(Associations, Debug, Identifiable, AsChangeset, Serialize, Deserialize, Queryable)]
 pub struct Session {
     pub id: i32,
     pub slug: String,
@@ -31,6 +32,7 @@ pub struct Session {
     pub dm: i32,
     pub session_date: DateTime<Utc>,
     pub colour: String,
+    pub group_id: i32,
 }
 
 // TODO: remove clone when diesel will allow skipping fields
@@ -58,6 +60,7 @@ pub struct SessionJson {
     pub dm: Profile,
     pub session_date: String,
     pub colour: String,
+    pub group: Group,
     pub members: Vec<Profile>,
     pub guests: Vec<(i32, String)>,
 }
@@ -66,6 +69,7 @@ impl Session {
     pub fn attach(
         &self,
         dm: Profile,
+        group: Group,
         members: Vec<Profile>,
         guests: Vec<(i32, String)>,
     ) -> SessionJson {
@@ -77,6 +81,7 @@ impl Session {
             dm,
             session_date: self.session_date.format(DATE_FORMAT).to_string(),
             colour: self.colour.clone(),
+            group,
             members,
             guests,
         }
@@ -104,8 +109,8 @@ impl Session {
             })?
             .iter()
             .map(|group| {
-                GroupSession::belonging_to(group)
-                    .inner_join(sessions::table.inner_join(users::table)) // dm details
+                Session::belonging_to(group)
+                    .inner_join(users::table) // dm details
                     .order(sessions::session_date.desc())
                     .select((sessions::all_columns, users::all_columns))
                     .limit(params.limit.unwrap_or(DEFAULT_LIMIT))
@@ -500,6 +505,7 @@ pub struct InsertableSession {
     pub dm: i32,
     pub session_date: DateTime<Utc>,
     pub colour: String,
+    pub group_id: i32,
 }
 
 #[table_name = "sessions_users"]
@@ -518,11 +524,19 @@ pub struct InsertableSessionGuest {
     pub guest_name: String,
 }
 
+#[table_name = "groups_users"]
+#[derive(Serialize, Deserialize, Insertable, AsChangeset)]
+pub struct InsertableGroupUser {
+    pub group_id: i32,
+    pub user_id: i32,
+    pub admin_accepted: bool,
+    pub user_accepted: bool,
+}
+
 impl InsertableSession {
     pub fn create(
         session: InsertableSession,
         creator_id: i32,
-        group_id: i32,
         connection: &PgConnection,
     ) -> Result<SessionJson, ApiResponse> {
         match connection
@@ -535,16 +549,6 @@ impl InsertableSession {
                 let new_session_user = &InsertableSessionUser {
                     session_id: new_session.id,
                     user_id: new_session.dm,
-                    dm_accepted: true,
-                    user_accepted: true,
-                };
-
-                diesel::insert_into(sessions_users::table)
-                    .values(new_session_user)
-                    .get_result::<SessionUser>(connection)?;
-                let new_group_session = &InsertableGroupSession {
-                    group_id: group_id,
-                    session_id: new_session.dm,
                     dm_accepted: true,
                     user_accepted: true,
                 };
@@ -660,6 +664,13 @@ pub fn populate(
                 status: Status::NotFound,
             }
         })?;
+    let group = Group::find(session.group_id, connection).map_err(|error| {
+        println!("Error: {:#?}", error);
+        ApiResponse {
+            json: json!({"error": "Group not found" }),
+            status: Status::NotFound,
+        }
+    })?;
 
-    Ok(session.attach(dm, members, guests))
+    Ok(session.attach(dm, group, members, guests))
 }

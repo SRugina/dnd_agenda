@@ -14,6 +14,7 @@ use rocket::http::RawStr;
 use rocket::http::Status;
 
 use crate::api::validate_colour;
+use crate::api::validate_group_exists;
 use crate::api::validate_user_exists;
 use crate::api::FieldValidator;
 use validator::Validate;
@@ -107,6 +108,8 @@ pub struct NewSession {
     pub session_date: Option<String>,
     #[validate(custom = "validate_colour")]
     pub colour: Option<String>,
+    #[validate(custom = "validate_group_exists")]
+    pub group: Option<i32>,
 }
 
 #[post("/", format = "application/json", data = "<session>")] // data attribute tells rocket to expect Body Data - then map the body to a parameter
@@ -130,6 +133,8 @@ pub fn create(
                     extractor.extract("session_date", new_session.session_date, empty_flag);
                 let colour = extractor.extract("colour", new_session.colour, empty_flag);
 
+                let group_id = extractor.extract("group", new_session.group, empty_flag);
+
                 let check = extractor.check();
 
                 match check {
@@ -143,6 +148,7 @@ pub fn create(
                             dm,
                             session_date,
                             colour,
+                            group_id,
                         };
                         match session::InsertableSession::create(
                             insertable_session,

@@ -7,13 +7,6 @@ table! {
 }
 
 table! {
-    groups_sessions (group_id, session_id) {
-        group_id -> Int4,
-        session_id -> Int4,
-    }
-}
-
-table! {
     groups_users (group_id, user_id) {
         group_id -> Int4,
         user_id -> Int4,
@@ -31,6 +24,7 @@ table! {
         dm -> Int4,
         session_date -> Timestamptz,
         colour -> Text,
+        group_id -> Int4,
     }
 }
 
@@ -63,10 +57,9 @@ table! {
 }
 
 joinable!(groups -> users (admin));
-joinable!(groups_sessions -> groups (group_id));
-joinable!(groups_sessions -> sessions (session_id));
 joinable!(groups_users -> groups (group_id));
 joinable!(groups_users -> users (user_id));
+joinable!(sessions -> groups (group_id));
 joinable!(sessions -> users (dm));
 joinable!(sessions_guests -> sessions (session_id));
 joinable!(sessions_users -> sessions (session_id));
@@ -74,7 +67,6 @@ joinable!(sessions_users -> users (user_id));
 
 allow_tables_to_appear_in_same_query!(
     groups,
-    groups_sessions,
     groups_users,
     sessions,
     sessions_guests,

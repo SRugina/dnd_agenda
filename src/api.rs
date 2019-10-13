@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::user;
+use crate::group;
 
 #[derive(Debug)]
 pub struct ApiResponse {
@@ -221,6 +222,15 @@ pub fn validate_colour(colour: &str) -> Result<(), ValidationError> {
 
 pub fn validate_user_exists(user_id: i32) -> Result<(), ValidationError> {
     match user::User::find(user_id, &crate::database::establish_connection()) {
+        Ok(_user) => Ok(()),
+        Err(_response) => Err(ValidationError::new(
+            "DM can only be a valid (existing) user",
+        )),
+    }
+}
+
+pub fn validate_group_exists(group_id: i32) -> Result<(), ValidationError> {
+    match group::Group::find(group_id, &crate::database::establish_connection()) {
         Ok(_user) => Ok(()),
         Err(_response) => Err(ValidationError::new(
             "DM can only be a valid (existing) user",

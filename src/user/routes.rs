@@ -9,6 +9,7 @@ use crate::api::ApiResponse;
 use crate::api::Auth;
 use rocket::http::Status;
 
+use crate::api::validate_group_exists;
 use crate::api::FieldValidator;
 use bcrypt::{hash, DEFAULT_COST};
 use validator::Validate;
@@ -80,6 +81,8 @@ pub struct NewUserData {
     pub email: Option<String>,
     #[validate(length(min = 8, code = "Password must be at least 8 characters long"))]
     pub password: Option<String>,
+    #[validate(custom = "validate_group_exists")]
+    pub group_id: Option<i32>,
 }
 
 #[post("/", format = "application/json", data = "<user>")] // data attribute tells rocket to expect Body Data - then map the body to a parameter
@@ -106,6 +109,8 @@ pub fn create(
     let email = extractor.extract("email", new_user.email, empty_flag);
     let password = extractor.extract("password", new_user.password, empty_flag);
 
+    let group_id = extractor.extract("group_id", new_user.group_id, empty_flag);
+
     extractor.check()?;
 
     let insertable_user = user::InsertableUser {
@@ -114,7 +119,7 @@ pub fn create(
         password,
     };
 
-    user::InsertableUser::create(insertable_user, &connection)
+    user::InsertableUser::create(insertable_user, group_id, &connection)
         .map(|user| ApiResponse {
             json: json!({ "user": user.to_user_auth() }),
             status: Status::Created,
