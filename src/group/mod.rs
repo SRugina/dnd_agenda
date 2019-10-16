@@ -30,6 +30,15 @@ pub struct GroupUser {
     pub user_accepted: bool,
 }
 
+#[table_name = "groups_users"]
+#[derive(Serialize, Deserialize, Insertable, AsChangeset)]
+pub struct InsertableGroupUser {
+    pub group_id: i32,
+    pub user_id: i32,
+    pub admin_accepted: bool,
+    pub user_accepted: bool,
+}
+
 impl Group {
     pub fn read(connection: &PgConnection) -> Result<Vec<Group>, ApiResponse> {
         groups::table

@@ -1,3 +1,4 @@
+use crate::schema::groups_users;
 use crate::schema::sessions;
 use crate::schema::users;
 use diesel::prelude::*;
@@ -11,6 +12,8 @@ use crate::api::Auth;
 use chrono::{Duration, Utc};
 
 use crate::session;
+
+use crate::group::{Group, GroupUser, InsertableGroupUser};
 
 type Url = String;
 
@@ -252,7 +255,6 @@ impl From<diesel::result::Error> for UserCreationError {
 impl InsertableUser {
     pub fn create(
         mut user: InsertableUser,
-        group_id: i32,
         connection: &PgConnection,
     ) -> Result<User, ApiResponse> {
         user.password = hash(user.password, DEFAULT_COST).map_err(|error| {
@@ -262,69 +264,23 @@ impl InsertableUser {
                 status: Status::InternalServerError,
             }
         })?;
-        match connection
-            .build_transaction()
-            .run::<User, UserCreationError, _>(|| {
-                let new_user = diesel::insert_into(users::table)
-                    .values(&user)
-                    .get_result::<User>(connection)
-                    .map_err(Into::into) // convert to UserCreationError
-                    .map_err(|error| {
-                        let field = match error {
-                            UserCreationError::DuplicatedEmail => "email",
-                            UserCreationError::DuplicatedUsername => "username",
-                        };
-                        println!("Cannot create user: {:#?}", error);
-                        ApiResponse {
-                            json: json!({ "error": format!("{} has already been taken", field) }),
-                            status: Status::UnprocessableEntity,
-                        }
-                    })?;
 
-                let new_group_user = &InsertableGroupUser {
-                    group_id,
-                    user_id: new_user.id,
-                    admin_accepted: true,
-                    user_accepted: true,
+         diesel::insert_into(users::table)
+            .values(&user)
+            .get_result::<User>(connection)
+            .map(|user| user)
+            .map_err(Into::into) // convert to UserCreationError
+            .map_err(|error| {
+                let field = match error {
+                    UserCreationError::DuplicatedEmail => "email",
+                    UserCreationError::DuplicatedUsername => "username",
                 };
-
-                diesel::insert_into(sessions_users::table)
-                    .values(new_session_user)
-                    .get_result::<SessionUser>(connection)?;
-
-                // add creator of session as member of the party if they are not the dm
-                if new_session.dm != creator_id {
-                    let creator_session_user = &InsertableSessionUser {
-                        session_id: new_session.id,
-                        user_id: creator_id,
-                        dm_accepted: true,
-                        user_accepted: true,
-                    };
-
-                    diesel::insert_into(sessions_users::table)
-                        .values(creator_session_user)
-                        .get_result::<SessionUser>(connection)?;
+                println!("Cannot create user: {:#?}", error);
+                ApiResponse {
+                    json: json!({ "error": format!("{} has already been taken", field) }),
+                    status: Status::UnprocessableEntity,
                 }
-
-                Ok(new_session)
-            }) {
-            Ok(session) => {
-                let dm = User::find(session.dm, connection)
-                    .map(|user| user.to_profile())
-                    .map_err(|response| response)?;
-
-                populate(&session, dm, connection)
-                    .map(|session_json| session_json)
-                    .map_err(|response| response)
-            }
-            Err(error) => {
-                println!("Error: {:#?}", error);
-                Err(ApiResponse {
-                    json: json!({"error": "Title must be unique", "details": error.to_string() }), // assume this as the most common cause due to slug and title being unique
-                    status: Status::InternalServerError,
-                })
-            }
-        }
+            })
     }
 }
 
