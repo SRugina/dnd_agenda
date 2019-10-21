@@ -119,7 +119,7 @@ pub fn create(
         password,
     };
 
-    user::InsertableUser::create(insertable_user, group_id, &connection)
+    user::InsertableUser::create(insertable_user, &connection)
         .map(|user| ApiResponse {
             json: json!({ "user": user.to_user_auth() }),
             status: Status::Created,

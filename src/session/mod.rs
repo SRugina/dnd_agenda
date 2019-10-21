@@ -90,10 +90,9 @@ impl Session {
         params: &FindSessions,
         user_id: i32,
         connection: &PgConnection,
-    ) -> Result<Vec<Vec<SessionJson>>, ApiResponse> {
+    ) -> Result<Vec<SessionJson>, ApiResponse> {
         let user = User::find(user_id, connection).map_err(|response| response)?;
         // get all sessions belonging to the same groups as the user
-        // let sessions: Result<Vec<Vec<SessionJson>>, ApiResponse> =
         GroupUser::belonging_to(&user)
             .filter(groups_users::columns::admin_accepted.eq(true))
             .filter(groups_users::columns::user_accepted.eq(true))
@@ -128,7 +127,7 @@ impl Session {
                     .collect::<Result<Vec<_>, _>>()
             })
             .collect::<Result<Vec<_>, _>>()
-        // .map(|session_jsons| session_jsons.into_iter().flatten().collect())
+            .map(|session_jsons| session_jsons.into_iter().flatten().collect())
     }
 
     pub fn find(session_id: i32, connection: &PgConnection) -> Result<Session, ApiResponse> {
@@ -203,7 +202,7 @@ impl Session {
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {
-                    json: json!({"error": "Users not found" }),
+                    json: json!({"error": "Guests not found" }),
                     status: Status::NotFound,
                 }
             })
@@ -522,15 +521,6 @@ pub struct InsertableSessionUser {
 pub struct InsertableSessionGuest {
     pub session_id: i32,
     pub guest_name: String,
-}
-
-#[table_name = "groups_users"]
-#[derive(Serialize, Deserialize, Insertable, AsChangeset)]
-pub struct InsertableGroupUser {
-    pub group_id: i32,
-    pub user_id: i32,
-    pub admin_accepted: bool,
-    pub user_accepted: bool,
 }
 
 impl InsertableSession {

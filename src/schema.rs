@@ -2,6 +2,7 @@ table! {
     groups (id) {
         id -> Int4,
         name -> Text,
+        description -> Text,
         admin -> Int4,
     }
 }
