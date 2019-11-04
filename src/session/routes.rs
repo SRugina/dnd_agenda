@@ -27,7 +27,7 @@ use regex::Regex;
 
 lazy_static! {
     static ref SESSION_DATE_FORMAT: Regex =
-        Regex::new(r"\d{4,}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z").unwrap();
+        Regex::new(r"\d{4,}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}[-,+]\d{2}:\d{2}").unwrap();
 }
 
 #[get("/?<params..>")]
@@ -35,30 +35,29 @@ pub fn get_all(
     auth: Result<Auth, JsonValue>,
     params: Form<session::FindSessions>,
     connection: DnDAgendaDB,
-) -> ApiResponse {
+) -> Result<ApiResponse, ApiResponse> {
     match auth {
-        Ok(auth) => match session::Session::read(&params, auth.id, &connection) {
-            Ok(sessions) => ApiResponse {
-                json: json!({ "sessions": sessions, "sessionsCount": sessions.len()  }),
+        Ok(auth) => session::Session::read(&params, auth.id, &connection)
+            .map(|(sessions, pages_count)| ApiResponse {
+                json: json!({ "sessions": sessions, "sessionsPagesCount": pages_count }),
                 status: Status::Ok,
-            },
-            Err(response) => response,
-        },
-        Err(auth_error) => ApiResponse {
+            })
+            .map_err(|response| response),
+        Err(auth_error) => Err(ApiResponse {
             json: auth_error,
             status: Status::Unauthorized,
-        },
+        }),
     }
 }
 
-#[get("/<session_id>")]
+#[get("/<session_slug>")]
 pub fn get_session(
     auth: Result<Auth, JsonValue>,
-    session_id: i32,
+    session_slug: String,
     connection: DnDAgendaDB,
 ) -> ApiResponse {
     match auth {
-        Ok(_auth) => match session::Session::find_as_json(session_id, &connection) {
+        Ok(_auth) => match session::Session::find_as_json(&session_slug, &connection) {
             Ok(session_json) => ApiResponse {
                 json: json!({ "session": session_json }),
                 status: Status::Ok,
@@ -123,7 +122,7 @@ pub fn create(
             Ok(json_session) => {
                 let new_session = json_session.into_inner();
 
-                let empty_flag = false; // i.e. emit error if empty
+                let empty_flag = false; // i.e. should we ignore empty fields?
                 let mut extractor = FieldValidator::validate(&new_session);
                 let title = extractor.extract("title", new_session.title, empty_flag);
                 let description =
@@ -139,8 +138,9 @@ pub fn create(
 
                 match check {
                     Ok(_) => {
-                        // no need to worry about err here because validator will check the regex of the date above
+                        // no need to worry about panic here because validator above will check the regex of the date
                         let session_date = session_date_str.parse::<DateTime<Utc>>().unwrap();
+
                         let insertable_session = session::InsertableSession {
                             slug: slugify(&title),
                             title,
@@ -228,6 +228,8 @@ pub fn patch_session(
 
                 if let Some(ref title) = session_update_details.title {
                     session_update_details.slug = Some(slugify(&title));
+                }  else {
+                    session_update_details.slug = None;
                 }
 
                 let session_validator_details = session_update_details.clone();
@@ -505,7 +507,7 @@ pub fn leave_session(
                 session::Session::find(session_id, &connection).map_err(|response| response)?;
 
             if auth.id != session_details.dm {
-                session::Session::delete_user(&session_details, auth.id, &connection)
+                session::Session::remove_user(&session_details, auth.id, &connection)
                     .map(|_| ApiResponse {
                         json: json!({ "message": "left session successfully" }),
                         status: Status::Ok,
@@ -573,7 +575,7 @@ pub fn remove_user_from_session(
 
             if auth.id == session_details.dm {
                 if user_id != auth.id {
-                    session::Session::delete_user(&session_details, user_id, &connection)
+                    session::Session::remove_user(&session_details, user_id, &connection)
                         .map(|_| ApiResponse {
                             json: json!({ "message": "removed user from session successfully" }),
                             status: Status::Ok,
@@ -647,6 +649,10 @@ pub fn get_session_as_guest(
 ) -> Result<ApiResponse, ApiResponse> {
     if let Some(guest_auth) = GuestAuth::decode_guest_token(guest_token.as_str()) {
         if guest_auth.session_id == session_id {
+            // get error if there is any (i.e. guest does not exist)
+            let _guest_details =
+                session::Session::get_guest(session_id, guest_auth.guest_id, &connection)
+                    .map_err(|response| response)?;
             session::Session::find(session_id, &connection)
                 .map(|session_json| ApiResponse {
                     json: json!({ "session": session_json }),
@@ -681,7 +687,7 @@ pub fn remove_guest_from_session(
                 session::Session::find(session_id, &connection).map_err(|response| response)?;
 
             if auth.id == session_details.dm {
-                session::Session::delete_guest(&session_details, guest_id, &connection)
+                session::Session::remove_guest(&session_details, guest_id, &connection)
                     .map(|_| ApiResponse {
                         json: json!({ "message": "removed guest from session successfully" }),
                         status: Status::Ok,

@@ -1,9 +1,11 @@
-use crate::schema::groups_users;
 use crate::schema::sessions;
 use crate::schema::users;
 use diesel::prelude::*;
 
 use bcrypt::{hash, verify, DEFAULT_COST};
+
+use crate::group::{Group, GroupUser};
+use crate::schema::{groups, groups_users};
 
 use crate::api::ApiResponse;
 use rocket::http::Status;
@@ -13,11 +15,17 @@ use chrono::{Duration, Utc};
 
 use crate::session;
 
-use crate::group::{Group, GroupUser, InsertableGroupUser};
-
 type Url = String;
 
 pub mod routes;
+
+use crate::config::DEFAULT_LIMIT;
+
+use crate::database::dsl;
+
+use crate::database::Paginate;
+
+use itertools::Itertools;
 
 #[table_name = "users"]
 #[derive(Identifiable, AsChangeset, Serialize, Deserialize, Queryable)]
@@ -31,6 +39,14 @@ pub struct User {
     pub password: String,
 }
 
+#[derive(FromForm, Default)]
+pub struct FindUsers {
+    global_search: Option<bool>,
+    username: Option<String>,
+    limit: Option<i64>,
+    page: Option<i64>,
+}
+
 #[derive(Serialize)]
 pub struct UserAuth<'a> {
     username: &'a str,
@@ -40,7 +56,7 @@ pub struct UserAuth<'a> {
     token: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone, PartialEq, Eq, Hash)]
 pub struct Profile {
     id: i32, // to get the sessions for the profile
     username: String,
@@ -133,18 +149,102 @@ impl User {
         }
     }
 
-    pub fn read(connection: &PgConnection) -> Result<Vec<Profile>, ApiResponse> {
-        users::table
-            .order(users::id)
-            .load::<User>(connection)
-            .map(|users| users.iter().map(|user| user.to_profile()).collect())
-            .map_err(|error| {
-                println!("Error: {:#?}", error);
-                ApiResponse {
-                    json: json!({"error": "Users not found" }),
-                    status: Status::NotFound,
-                }
-            })
+    pub fn read(
+        params: &FindUsers,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<(Vec<Profile>, i64), ApiResponse> {
+        if params.global_search.unwrap_or(false) {
+            //get all users regardless of what groups the current user is in
+
+            let mut query = users::table.select(users::all_columns).into_boxed();
+
+            if let Some(ref username) = params.username {
+                query = query
+                    .filter(dsl::similar_to(users::username, username))
+                    .order(dsl::similarity(users::username, username).desc())
+            }
+
+            query
+                .paginate(params.page.unwrap_or(1))
+                .per_page(params.limit.unwrap_or(DEFAULT_LIMIT))
+                .load_and_count_pages::<User>(connection)
+                .map(|(users, pages_count)| {
+                    (
+                        users.iter().map(|user| user.to_profile()).collect(),
+                        pages_count,
+                    )
+                })
+                .map_err(|error| {
+                    println!("Error: {:#?}", error);
+                    ApiResponse {
+                        json: json!({"error": "Users not found" }),
+                        status: Status::NotFound,
+                    }
+                })
+        } else {
+            let mut pages_count: i64 = 0;
+
+            // get all users belonging to the same groups as the current user
+
+            let user = User::find(user_id, connection).map_err(|response| response)?;
+
+            GroupUser::belonging_to(&user)
+                .filter(groups_users::columns::admin_accepted.eq(true))
+                .filter(groups_users::columns::user_accepted.eq(true))
+                .inner_join(groups::table)
+                .select(groups::all_columns)
+                .load::<Group>(connection)
+                .map_err(|error| {
+                    println!("Error: {:#?}", error);
+                    ApiResponse {
+                        json: json!({"error": "Groups not found" }),
+                        status: Status::NotFound,
+                    }
+                })?
+                .iter()
+                .map(|group| {
+                    let mut query = GroupUser::belonging_to(group)
+                        .filter(groups_users::columns::admin_accepted.eq(true))
+                        .filter(groups_users::columns::user_accepted.eq(true))
+                        .inner_join(users::table) // each user's details
+                        .select(users::all_columns)
+                        .into_boxed();
+
+                    if let Some(ref username) = params.username {
+                        query = query
+                            .filter(dsl::similar_to(users::username, username))
+                            .order(dsl::similarity(users::username, username).desc())
+                    }
+
+                    query
+                        .paginate(params.page.unwrap_or(1))
+                        .per_page(params.limit.unwrap_or(DEFAULT_LIMIT))
+                        .load_and_count_pages::<User>(connection)
+                        .map_err(|error| {
+                            println!("Error: {:#?}", error);
+                            ApiResponse {
+                                json: json!({"error": "Users not found" }),
+                                status: Status::NotFound,
+                            }
+                        })
+                        .map(|(users, count)| {
+                            pages_count += count;
+                            users
+                        })?
+                        .iter()
+                        .map(|user| Ok(user.to_profile()))
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(|profiles| {
+                    (profiles
+                        .into_iter()
+                        .flatten()
+                        .unique_by(|profile| profile.id)
+                        .collect(), pages_count)
+                })
+        }
     }
 
     pub fn find(user_id: i32, connection: &PgConnection) -> Result<User, ApiResponse> {
@@ -265,7 +365,7 @@ impl InsertableUser {
             }
         })?;
 
-         diesel::insert_into(users::table)
+        diesel::insert_into(users::table)
             .values(&user)
             .get_result::<User>(connection)
             .map(|user| user)
@@ -277,7 +377,7 @@ impl InsertableUser {
                 };
                 println!("Cannot create user: {:#?}", error);
                 ApiResponse {
-                    json: json!({ "error": format!("{} has already been taken", field) }),
+                    json: json!({ "errors": { field: [ "has already been taken" ] } }),
                     status: Status::UnprocessableEntity,
                 }
             })

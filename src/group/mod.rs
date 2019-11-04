@@ -1,18 +1,29 @@
-use crate::schema::{groups, groups_users, users, groups};
+use crate::schema::{groups, groups_users, sessions, users};
 use diesel::prelude::*;
 
-use crate::user::{User, Profile};
-use crate::group::Group;
+use crate::session::Session;
+use crate::user::{Profile, User};
 
 pub mod routes;
 
 use crate::api::ApiResponse;
 use rocket::http::Status;
 
+use crate::config::DEFAULT_LIMIT;
+
+use crate::database::dsl;
+
+use crate::database::Paginate;
+
+use itertools::Itertools;
+
 #[table_name = "groups"]
-#[derive(Debug, Identifiable, AsChangeset, Serialize, Deserialize, Queryable)]
+#[derive(
+    Debug, Identifiable, AsChangeset, Serialize, Deserialize, Queryable, Clone, PartialEq, Eq, Hash,
+)]
 pub struct Group {
     pub id: i32,
+    pub slug: String,
     pub name: String,
     pub description: String,
     pub admin: i32,
@@ -21,7 +32,9 @@ pub struct Group {
 #[table_name = "groups"]
 #[derive(Serialize, Deserialize, Insertable)]
 pub struct InsertableGroup {
+    pub slug: String,
     pub name: String,
+    pub description: String,
     pub admin: i32,
 }
 
@@ -29,11 +42,12 @@ pub struct InsertableGroup {
 #[serde(rename_all = "camelCase")]
 pub struct GroupJson {
     pub id: i32,
+    pub slug: String,
     pub name: String,
     pub description: String,
     pub admin: Profile,
     pub members: Vec<Profile>,
-    pub groups: Vec<Group>
+    pub sessions: Vec<Session>,
 }
 
 #[derive(Identifiable, Queryable, Debug, Associations, Serialize, Deserialize)]
@@ -65,34 +79,91 @@ pub struct UpdateGroupUser {
     user_accepted: bool,
 }
 
+#[derive(FromForm, Default)]
+pub struct FindGroups {
+    global_search: Option<bool>,
+    name: Option<String>,
+    limit: Option<i64>,
+    page: Option<i64>,
+}
+
 impl Group {
     pub fn attach(
         &self,
         admin: Profile,
         members: Vec<Profile>,
-        groups: Vec<Group>,
+        sessions: Vec<Session>,
     ) -> GroupJson {
         GroupJson {
             id: self.id,
+            slug: self.slug.clone(),
             name: self.name.clone(),
             description: self.description.clone(),
             admin,
             members,
-            groups,
+            sessions,
         }
     }
-    pub fn read(connection: &PgConnection) -> Result<Vec<Group>, ApiResponse> {
-        groups::table
-            .order(groups::id)
-            .load::<Group>(connection)
-            .map(|groups| groups)
-            .map_err(|error| {
-                println!("Error: {:#?}", error);
-                ApiResponse {
-                    json: json!({"error": "Groups not found" }),
-                    status: Status::NotFound,
-                }
-            })
+    pub fn read(
+        params: &FindGroups,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<(Vec<Group>, i64), ApiResponse> {
+        if params.global_search.unwrap_or(false) {
+            //get all groups regardless of what groups the current user is in
+
+            let mut query = groups::table.select(groups::all_columns).into_boxed();
+
+            if let Some(ref name) = params.name {
+                query = query
+                    .filter(dsl::similar_to(groups::name, name))
+                    .order(dsl::similarity(groups::name, name).desc())
+            }
+
+            query
+                .paginate(params.page.unwrap_or(1))
+                .per_page(params.limit.unwrap_or(DEFAULT_LIMIT))
+                .load_and_count_pages::<Group>(connection)
+                .map(|(groups, pages_count)| (groups, pages_count))
+                .map_err(|error| {
+                    println!("Error: {:#?}", error);
+                    ApiResponse {
+                        json: json!({"error": "Groups not found" }),
+                        status: Status::NotFound,
+                    }
+                })
+        } else {
+
+            // get all groups belonging to the current user
+
+            let user = User::find(user_id, connection).map_err(|response| response)?;
+
+            let mut query = GroupUser::belonging_to(&user)
+                .filter(groups_users::columns::admin_accepted.eq(true))
+                .filter(groups_users::columns::user_accepted.eq(true))
+                .inner_join(groups::table)
+                .select(groups::all_columns)
+                .into_boxed();
+
+            if let Some(ref name) = params.name {
+                query = query
+                    .filter(dsl::similar_to(groups::name, name))
+                    .order(dsl::similarity(groups::name, name).desc())
+            }
+
+            query
+                .paginate(params.page.unwrap_or(1))
+                .per_page(params.limit.unwrap_or(DEFAULT_LIMIT))
+                .load_and_count_pages::<Group>(connection)
+                .map(|(groups, pages_count)| (groups.into_iter().unique_by(|group| group.id).collect(), pages_count))
+                .map_err(|error| {
+                    println!("Error: {:#?}", error);
+                    ApiResponse {
+                        json: json!({"error": "Groups not found" }),
+                        status: Status::NotFound,
+                    }
+                })
+        }
     }
 
     pub fn find(group_id: i32, connection: &PgConnection) -> Result<Group, ApiResponse> {
@@ -109,12 +180,12 @@ impl Group {
             })
     }
 
-        pub fn find_as_json(
-        group_id: i32,
+    pub fn find_as_json(
+        group_slug: &str,
         connection: &PgConnection,
     ) -> Result<GroupJson, ApiResponse> {
         let group_and_admin = groups::table
-            .find(group_id)
+            .filter(groups::slug.eq(group_slug))
             .inner_join(users::table) // admin details
             .select((groups::all_columns, users::all_columns))
             .first::<(Group, User)>(connection)
@@ -129,7 +200,7 @@ impl Group {
         populate(&group, admin.to_profile(), connection).map_err(|response| response)
     }
 
-        pub fn request_to_join(
+    pub fn request_to_join(
         group_id: i32,
         user_id: i32,
         connection: &PgConnection,
@@ -251,6 +322,49 @@ impl Group {
 
         Ok(())
     }
+
+    pub fn remove_user(
+        group: &Group,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<(), ApiResponse> {
+        let group_user = GroupUser::belonging_to(group)
+            .filter(groups_users::columns::user_id.eq(user_id))
+            .get_result::<GroupUser>(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "User not found", "details": error.to_string() }),
+                    status: Status::NotFound,
+                }
+            })?;
+
+        diesel::delete(groups_users::table.find((group_user.group_id, user_id)))
+            .execute(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "User could not be deleted", "details": error.to_string() }),
+                    status: Status::NotFound,
+                }
+            })?;
+
+        Ok(())
+    }
+
+    pub fn delete(group: &Group, connection: &PgConnection) -> Result<(), ApiResponse> {
+        diesel::delete(groups::table.find(group.id))
+            .execute(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "Group could not be deleted", "details": error.to_string() }),
+                    status: Status::NotFound,
+                }
+            })?;
+
+        Ok(())
+    }
 }
 
 impl InsertableGroup {
@@ -305,11 +419,70 @@ impl InsertableGroup {
             Err(error) => {
                 println!("Error: {:#?}", error);
                 Err(ApiResponse {
-                    json: json!({"error": "Title must be unique", "details": error.to_string() }), // assume this as the most common cause due to slug and title being unique
+                    json: json!({"errors":  { "name": [ "Name must be unique" ] }, "details": error.to_string() }), // assume this as the most common cause due to slug and name not being unique
                     status: Status::InternalServerError,
                 })
             }
         }
+    }
+}
+
+// TODO: remove clone when diesel will allow skipping fields
+#[derive(Deserialize, AsChangeset, Default, Clone)]
+#[table_name = "groups"]
+pub struct UpdateGroup {
+    name: Option<String>,
+    description: Option<String>,
+    admin: Option<i32>,
+    #[serde(skip)]
+    slug: Option<String>,
+}
+
+impl UpdateGroup {
+    pub fn update(
+        id: i32,
+        group: &UpdateGroup,
+        connection: &PgConnection,
+    ) -> Result<GroupJson, ApiResponse> {
+        let updated_group = diesel::update(groups::table.find(id))
+            .set(group)
+            .get_result::<Group>(connection)
+            .map_err(|error| {
+                println!("Cannot update group: {:#?}", error);
+                ApiResponse {
+                    json: json!({ "error": "cannot update group" }),
+                    status: Status::UnprocessableEntity,
+                }
+            })?;
+
+        let admin = User::find(updated_group.admin, connection)
+            .map(|user| user.to_profile())
+            .map_err(|response| response)?;
+
+        populate(&updated_group, admin, connection)
+            .map(|group_json| group_json)
+            .map_err(|response| response)
+    }
+}
+
+impl GroupUser {
+    pub fn check_user_in_group(
+        group_id: i32,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<bool, ApiResponse> {
+        groups_users::table.find((group_id, user_id))
+            .filter(groups_users::columns::admin_accepted.eq(true))
+            .filter(groups_users::columns::user_accepted.eq(true))
+            .get_result::<GroupUser>(connection)
+            .map(|_| true)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({ "errors": { "group": [ "You are not a member of that group" ] } }),
+                    status: Status::NotFound,
+                }
+            })
     }
 }
 
@@ -334,16 +507,16 @@ pub fn populate(
         .iter()
         .map(|user| user.to_profile())
         .collect();
-    let groups = Group::belonging_to(group)
-        .select(groups::all_columns)
-        .load::<Group>(connection)
+    let sessions = Session::belonging_to(group)
+        .select(sessions::all_columns)
+        .load::<Session>(connection)
         .map_err(|error| {
             println!("Error: {:#?}", error);
             ApiResponse {
-                json: json!({"error": "Groups not found" }),
+                json: json!({"error": "Sessions not found" }),
                 status: Status::NotFound,
             }
         })?;
 
-    Ok(group.attach(admin, members, groups))
+    Ok(group.attach(admin, members, sessions))
 }

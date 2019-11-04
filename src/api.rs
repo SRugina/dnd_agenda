@@ -5,8 +5,8 @@ use rocket_contrib::json::JsonValue;
 use std::collections::HashMap;
 use validator::{Validate, ValidationError, ValidationErrors};
 
-use crate::user;
 use crate::group;
+use crate::user;
 
 #[derive(Debug)]
 pub struct ApiResponse {
@@ -210,10 +210,11 @@ pub fn validate_colour(colour: &str) -> Result<(), ValidationError> {
         || colour == "blue"
         || colour == "green"
         || colour == "purple"
-        || colour == "yellow")
+        || colour == "yellow"
+        || colour == "violet")
     {
         return Err(ValidationError::new(
-            "colour can only be red, blue, green, purple, or yellow",
+            "colour can only be red, blue, green, purple, yellow, or violet",
         ));
     }
 
@@ -223,17 +224,13 @@ pub fn validate_colour(colour: &str) -> Result<(), ValidationError> {
 pub fn validate_user_exists(user_id: i32) -> Result<(), ValidationError> {
     match user::User::find(user_id, &crate::database::establish_connection()) {
         Ok(_user) => Ok(()),
-        Err(_response) => Err(ValidationError::new(
-            "DM can only be a valid (existing) user",
-        )),
+        Err(_response) => Err(ValidationError::new("can only be a valid (existing) user")),
     }
 }
 
 pub fn validate_group_exists(group_id: i32) -> Result<(), ValidationError> {
     match group::Group::find(group_id, &crate::database::establish_connection()) {
-        Ok(_user) => Ok(()),
-        Err(_response) => Err(ValidationError::new(
-            "DM can only be a valid (existing) user",
-        )),
+        Ok(_group) => Ok(()),
+        Err(_response) => Err(ValidationError::new("Group can only be an existing group")),
     }
 }

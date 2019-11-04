@@ -5,24 +5,26 @@ use rocket_contrib::json::Json;
 use rocket_contrib::json::JsonError;
 use rocket_contrib::json::JsonValue;
 
+use rocket::request::Form;
+
 use crate::api::ApiResponse;
 use crate::api::Auth;
 use rocket::http::Status;
 
-use crate::api::validate_group_exists;
 use crate::api::FieldValidator;
 use bcrypt::{hash, DEFAULT_COST};
 use validator::Validate;
 
-#[get("/")]
+#[get("/?<params..>")]
 pub fn get_all(
     auth: Result<Auth, JsonValue>,
+    params: Form<user::FindUsers>,
     connection: DnDAgendaDB,
 ) -> Result<ApiResponse, ApiResponse> {
     match auth {
-        Ok(_auth) => user::User::read(&connection)
-            .map(|user| ApiResponse {
-                json: json!({ "user": user }),
+        Ok(auth) => user::User::read(&params, auth.id, &connection)
+            .map(|(users, pages_count)| ApiResponse {
+                json: json!({ "users": users, "usersPagesCount": pages_count }),
                 status: Status::Ok,
             })
             .map_err(|response| response),
@@ -41,7 +43,7 @@ pub fn get_self(
     match auth {
         Ok(auth) => user::User::find(auth.id, &connection)
             .map(|user| ApiResponse {
-                json: json!({ "user": user }),
+                json: json!({ "user": user.to_user_auth() }),
                 status: Status::Ok,
             })
             .map_err(|response| response),
@@ -81,8 +83,6 @@ pub struct NewUserData {
     pub email: Option<String>,
     #[validate(length(min = 8, code = "Password must be at least 8 characters long"))]
     pub password: Option<String>,
-    #[validate(custom = "validate_group_exists")]
-    pub group_id: Option<i32>,
 }
 
 #[post("/", format = "application/json", data = "<user>")] // data attribute tells rocket to expect Body Data - then map the body to a parameter
@@ -108,8 +108,6 @@ pub fn create(
     let username = extractor.extract("username", new_user.username, empty_flag);
     let email = extractor.extract("email", new_user.email, empty_flag);
     let password = extractor.extract("password", new_user.password, empty_flag);
-
-    let group_id = extractor.extract("group_id", new_user.group_id, empty_flag);
 
     extractor.check()?;
 
@@ -151,7 +149,7 @@ pub fn login(
         }
     })?.into_inner();
 
-    let empty_flag = false; // i.e. emit error if empty
+    let empty_flag = false; // i.e. should we ignore empty fields?
     let mut extractor = FieldValidator::default();
     let email = extractor.extract("email", login_user.email, empty_flag);
     let password = extractor.extract("password", login_user.password, empty_flag);
@@ -220,7 +218,7 @@ pub fn patch_self(
 
             user::UpdateUser::update(auth.id, &update_user, &connection)
                 .map(|user| ApiResponse {
-                    json: json!({ "user": user }),
+                    json: json!({ "user": user.to_user_auth() }),
                     status: Status::Ok,
                 })
                 .map_err(|response| response)
@@ -262,7 +260,7 @@ pub fn patch_pwd_of_self(
 
             let user_validator_details = user_details.clone();
 
-            let empty_flag = false; // i.e. emit error if empty
+            let empty_flag = false; // i.e. should we ignore empty fields?
             let mut extractor = FieldValidator::validate(&user_details);
             let old_password = extractor.extract(
                 "old_password",
@@ -297,8 +295,8 @@ pub fn patch_pwd_of_self(
                 };
 
                 user::UpdateUser::update(auth.id, &update_user, &connection)
-                    .map(|_| ApiResponse {
-                        json: json!({ "message": "password changed successfully" }),
+                    .map(|user| ApiResponse {
+                        json: json!({ "user": user.to_user_auth() }),
                         status: Status::Ok,
                     })
                     .map_err(|response| response)

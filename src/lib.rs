@@ -12,6 +12,7 @@ extern crate diesel;
 extern crate lazy_static;
 
 use validator;
+
 #[macro_use]
 extern crate validator_derive;
 
@@ -63,6 +64,23 @@ pub fn rocket() -> rocket::Rocket {
                 session::routes::get_session_as_guest,
                 session::routes::get_guests,
                 session::routes::remove_guest_from_session,
+            ],
+        )
+        .mount(
+            "/api/v1/groups",
+            routes![
+                group::routes::create,
+                group::routes::get_group,
+                group::routes::get_all,
+                group::routes::patch_group,
+                group::routes::patch_admin_of_group,
+                group::routes::delete_group,
+                group::routes::join_group,
+                group::routes::accept_to_group,
+                group::routes::invite_to_group,
+                group::routes::accept_invite_to_group,
+                group::routes::leave_group,
+                group::routes::remove_user_from_group,
             ],
         )
         .attach(database::DnDAgendaDB::fairing())

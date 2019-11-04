@@ -1,6 +1,7 @@
 table! {
     groups (id) {
         id -> Int4,
+        slug -> Text,
         name -> Text,
         description -> Text,
         admin -> Int4,

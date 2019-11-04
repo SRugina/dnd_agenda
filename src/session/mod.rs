@@ -19,7 +19,13 @@ pub mod routes;
 use crate::api::ApiResponse;
 use rocket::http::Status;
 
-const DEFAULT_LIMIT: i64 = 20;
+use crate::config::DEFAULT_LIMIT;
+
+use crate::database::dsl;
+
+use crate::database::Paginate;
+
+use itertools::Itertools;
 
 #[table_name = "sessions"]
 #[belongs_to(Group)]
@@ -45,12 +51,12 @@ pub struct UpdateSessionUser {
 
 #[derive(FromForm, Default)]
 pub struct FindSessions {
-    // dm: Option<String>,
+    dm: Option<String>,
     limit: Option<i64>,
-    offset: Option<i64>,
+    page: Option<i64>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone, PartialEq, Eq, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionJson {
     pub id: i32,
@@ -90,8 +96,10 @@ impl Session {
         params: &FindSessions,
         user_id: i32,
         connection: &PgConnection,
-    ) -> Result<Vec<SessionJson>, ApiResponse> {
+    ) -> Result<(Vec<SessionJson>, i64), ApiResponse> {
+        let mut pages_count: i64 = 0;
         let user = User::find(user_id, connection).map_err(|response| response)?;
+
         // get all sessions belonging to the same groups as the user
         GroupUser::belonging_to(&user)
             .filter(groups_users::columns::admin_accepted.eq(true))
@@ -102,32 +110,50 @@ impl Session {
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {
-                    json: json!({"error": "Group not found" }),
+                    json: json!({"error": "Groups not found" }),
                     status: Status::NotFound,
                 }
             })?
             .iter()
             .map(|group| {
-                Session::belonging_to(group)
+                let mut query = Session::belonging_to(group)
                     .inner_join(users::table) // dm details
-                    .order(sessions::session_date.desc())
                     .select((sessions::all_columns, users::all_columns))
-                    .limit(params.limit.unwrap_or(DEFAULT_LIMIT))
-                    .offset(params.offset.unwrap_or(0))
-                    .load::<(Session, User)>(connection)
+                    .into_boxed();
+
+                if let Some(ref dm) = params.dm {
+                    query = query
+                        .filter(dsl::similar_to(users::username, dm))
+                        .order(dsl::similarity(users::username, dm).desc())
+                }
+
+                query
+                    .paginate(params.page.unwrap_or(1))
+                    .per_page(params.limit.unwrap_or(DEFAULT_LIMIT))
+                    .load_and_count_pages::<(Session, User)>(connection)
                     .map_err(|error| {
                         println!("Error: {:#?}", error);
                         ApiResponse {
                             json: json!({"error": "Sessions not found" }),
                             status: Status::NotFound,
                         }
+                    })
+                    .map(|(sessions_and_dms, count)| {
+                        pages_count += count;
+                        sessions_and_dms
                     })?
                     .iter()
                     .map(|(session, dm)| populate(session, dm.to_profile(), connection))
                     .collect::<Result<Vec<_>, _>>()
             })
             .collect::<Result<Vec<_>, _>>()
-            .map(|session_jsons| session_jsons.into_iter().flatten().collect())
+            .map(|session_jsons| {
+                (session_jsons
+                    .into_iter()
+                    .flatten()
+                    .unique_by(|session_json| session_json.id)
+                    .collect(), pages_count)
+            })
     }
 
     pub fn find(session_id: i32, connection: &PgConnection) -> Result<Session, ApiResponse> {
@@ -145,11 +171,11 @@ impl Session {
     }
 
     pub fn find_as_json(
-        session_id: i32,
+        session_slug: &str,
         connection: &PgConnection,
     ) -> Result<SessionJson, ApiResponse> {
         let session_and_dm = sessions::table
-            .find(session_id)
+            .filter(sessions::slug.eq(session_slug))
             .inner_join(users::table) // dm details
             .select((sessions::all_columns, users::all_columns))
             .first::<(Session, User)>(connection)
@@ -203,6 +229,28 @@ impl Session {
                 println!("Error: {:#?}", error);
                 ApiResponse {
                     json: json!({"error": "Guests not found" }),
+                    status: Status::NotFound,
+                }
+            })
+    }
+
+    pub fn get_guest(
+        session_id: i32,
+        guest_id: i32,
+        connection: &PgConnection,
+    ) -> Result<(i32, String), ApiResponse> {
+        sessions_guests::table
+            .find((session_id, guest_id))
+            .select((
+                sessions_guests::columns::guest_id,
+                sessions_guests::columns::guest_name,
+            ))
+            .first::<(i32, String)>(connection)
+            .map(|guests| guests)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "Guest not found" }),
                     status: Status::NotFound,
                 }
             })
@@ -331,7 +379,7 @@ impl Session {
         Ok(())
     }
 
-    pub fn delete_user(
+    pub fn remove_user(
         session: &Session,
         user_id: i32,
         connection: &PgConnection,
@@ -360,7 +408,7 @@ impl Session {
         Ok(())
     }
 
-    pub fn delete_guest(
+    pub fn remove_guest(
         session: &Session,
         guest_id: i32,
         connection: &PgConnection,
@@ -529,6 +577,11 @@ impl InsertableSession {
         creator_id: i32,
         connection: &PgConnection,
     ) -> Result<SessionJson, ApiResponse> {
+        //check the user is in the group they want to add the session to
+        let _is_user_in_group =
+            GroupUser::check_user_in_group(session.group_id, creator_id, connection)
+                .map_err(|response| response)?;
+
         match connection
             .build_transaction()
             .run::<Session, diesel::result::Error, _>(|| {
@@ -575,7 +628,7 @@ impl InsertableSession {
             Err(error) => {
                 println!("Error: {:#?}", error);
                 Err(ApiResponse {
-                    json: json!({"error": "Title must be unique", "details": error.to_string() }), // assume this as the most common cause due to slug and title being unique
+                    json: json!({ "errors": { "title": [ "Title must be unique" ] }, "details": error.to_string() }), // assume this as the most common cause due to slug and title not being unique
                     status: Status::InternalServerError,
                 })
             }
