@@ -54,6 +54,7 @@ pub struct FindSessions {
     dm: Option<String>,
     limit: Option<i64>,
     page: Option<i64>,
+    order: Option<String>,
 }
 
 #[derive(Serialize, Clone, PartialEq, Eq, Hash)]
@@ -125,6 +126,19 @@ impl Session {
                     query = query
                         .filter(dsl::similar_to(users::username, dm))
                         .order(dsl::similarity(users::username, dm).desc())
+                } else if let Some(ref order) = params.order {
+                    match order.to_lowercase().as_ref() {
+                        "asc" => query = query
+                        .order(sessions::session_date.asc()),
+                        "desc" => query = query
+                        .order(sessions::session_date.desc()),
+                        _ => query = query
+                        .order(sessions::session_date.asc())
+                    }
+                } else {
+                    // default to asc
+                    query = query
+                        .order(sessions::session_date.asc())
                 }
 
                 query

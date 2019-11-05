@@ -228,7 +228,7 @@ pub fn patch_session(
 
                 if let Some(ref title) = session_update_details.title {
                     session_update_details.slug = Some(slugify(&title));
-                }  else {
+                } else {
                     session_update_details.slug = None;
                 }
 
