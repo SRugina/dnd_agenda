@@ -4,6 +4,7 @@
 extern crate rocket;
 #[macro_use]
 extern crate rocket_contrib;
+use rocket_cors;
 #[macro_use]
 extern crate serde_derive;
 #[macro_use]
@@ -84,4 +85,5 @@ pub fn rocket() -> rocket::Rocket {
             ],
         )
         .attach(database::DnDAgendaDB::fairing())
+        .attach(rocket_cors::Cors::from_options(&rocket_cors::CorsOptions::default()).unwrap())
 }
