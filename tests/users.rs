@@ -13,7 +13,7 @@ fn test_register() {
     let response = &mut client
         .post("/api/v1/users")
         .header(ContentType::JSON)
-        .body(json_string!({ "user": { "username": USERNAME, "email": EMAIL, "password": PASSWORD } }))
+        .body(json_string!({ "username": USERNAME, "email": EMAIL, "password": PASSWORD }))
         .dispatch();
 
     let status = response.status();
@@ -38,20 +38,24 @@ fn test_register_with_duplicated_email() {
         .post("/api/v1/users")
         .header(ContentType::JSON)
         .body(json_string!({
-            "user": {
                 "username": "tester_1",
                 "email": "tester@test.com",
                 "password": PASSWORD,
-            },
         }))
         .dispatch();
 
     assert_eq!(response.status(), Status::UnprocessableEntity);
 
     let value = response_json_value(response);
-    let error = value.get("error").and_then(|error| error.as_str());
+    let error = value
+        .get("errors")
+        .expect("must have a 'errors' field")
+        .get("email")
+        .expect("must have a 'email' field")
+        .get(0)
+        .and_then(|error| error.as_str());
 
-    assert_eq!(error, Some("email has already been taken"))
+    assert_eq!(error, Some("has already been taken"))
 }
 
 #[test]
@@ -61,7 +65,7 @@ fn test_incorrect_login() {
     let response = &mut client
         .post("/api/v1/users/login")
         .header(ContentType::JSON)
-        .body(json_string!({"user": {"email": EMAIL, "password": "foo"}}))
+        .body(json_string!({"email": EMAIL, "password": "foo"}))
         .dispatch();
 
     assert_eq!(response.status(), Status::Unauthorized);
@@ -82,7 +86,7 @@ fn test_login() {
     let response = &mut client
         .post("/api/v1/users/login")
         .header(ContentType::JSON)
-        .body(json_string!({"user": {"email": EMAIL, "password": PASSWORD}}))
+        .body(json_string!({"email": EMAIL, "password": PASSWORD}))
         .dispatch();
 
     let value = response_json_value(response);
@@ -146,14 +150,13 @@ fn check_user_response(response: &mut LocalResponse) {
 
 fn check_user_validation_errors(response: &mut LocalResponse) {
     let value = response_json_value(response);
-    println!("{}", value);
     let error = value
-        .get("error")
-        .expect("must have an 'error' field")
-        .as_str();
+        .get("errors")
+        .expect("must have a 'errors' field")
+        .get("username") // if duplicate user, the username error is output first so check for that
+        .expect("must have a 'username' field")
+        .get(0)
+        .and_then(|error| error.as_str());
 
-    assert!(
-        (error == Some("email has already been taken"))
-            || (error == Some("username has already been taken"))
-    )
+    assert_eq!(error, Some("has already been taken"))
 }

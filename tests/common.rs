@@ -56,7 +56,7 @@ fn try_login(client: &Client) -> Option<Token> {
     let response = &mut client
         .post("/api/v1/users/login")
         .header(ContentType::JSON)
-        .body(json_string!({ "user": { "email": EMAIL, "password": PASSWORD } }))
+        .body(json_string!({ "email": EMAIL, "password": PASSWORD }))
         .dispatch();
 
     if response.status() == Status::Unauthorized {
@@ -78,7 +78,7 @@ pub fn register(client: &Client, username: &str, email: &str, password: &str) {
     let response = client
         .post("/api/v1/users")
         .header(ContentType::JSON)
-        .body(json_string!({ "user": { "username": username, "email": email, "password": password } }))
+        .body(json_string!({ "username": username, "email": email, "password": password }))
         .dispatch();
 
     match response.status() {
