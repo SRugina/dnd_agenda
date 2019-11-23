@@ -51,9 +51,10 @@ pub struct UpdateSessionUser {
 
 #[derive(FromForm, Default)]
 pub struct FindSessions {
+    title: Option<String>,
     dm: Option<String>,
-    limit: Option<i64>,
-    page: Option<i64>,
+    pub limit: Option<i64>,
+    pub page: Option<i64>,
     order: Option<String>,
 }
 
@@ -123,9 +124,12 @@ impl Session {
                     .into_boxed();
 
                 if let Some(ref dm) = params.dm {
+                    // query = query
+                    //     .filter(dsl::similar_to(users::username, dm))
+                    //     .order(dsl::similarity(users::username, dm).desc())
                     query = query
-                        .filter(dsl::similar_to(users::username, dm))
-                        .order(dsl::similarity(users::username, dm).desc())
+                        .filter(users::username.eq(dm))
+                        .order(sessions::session_date.asc())
                 } else if let Some(ref order) = params.order {
                     match order.to_lowercase().as_ref() {
                         "asc" => query = query
@@ -139,6 +143,12 @@ impl Session {
                     // default to asc
                     query = query
                         .order(sessions::session_date.asc())
+                }
+
+                if let Some(ref title) = params.title {
+                query = query
+                    .filter(dsl::similar_to(sessions::title, title))
+                    .order(dsl::similarity(sessions::title, title).desc())
                 }
 
                 query
@@ -334,8 +344,15 @@ impl Session {
     pub fn invite_to_join(
         session_id: i32,
         user_id: i32,
+        group_id: i32,
         connection: &PgConnection,
     ) -> Result<(), ApiResponse> {
+        if !GroupUser::check_user_in_group(group_id, user_id, connection)? {
+            return Err(ApiResponse {
+                    json: json!({"error": "User not in the same group as the session" }),
+                    status: Status::InternalServerError,
+                })
+        }
         let new_session_user = &InsertableSessionUser {
             session_id,
             user_id,
@@ -391,6 +408,30 @@ impl Session {
             })?;
 
         Ok(())
+    }
+
+    pub fn is_user_waiting_to_join(
+        session_id: i32,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<bool, ApiResponse> {
+        sessions_users::table
+            .find((session_id, user_id))
+            .select((
+                sessions_users::columns::dm_accepted,
+                sessions_users::columns::user_accepted,
+            ))
+            .get_result::<(bool, bool)>(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "Session/User not found", "details": error.to_string() }),
+                    status: Status::NotFound,
+                }
+            })
+            // return ! because we want if still waiting, if they are accepted they are
+            // not waiting
+            .map(|(dm_accepted, user_accepted)| !(dm_accepted && user_accepted))
     }
 
     pub fn remove_user(

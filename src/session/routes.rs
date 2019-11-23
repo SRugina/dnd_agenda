@@ -435,7 +435,40 @@ pub fn accept_to_session(
     }
 }
 
-#[get("/<session_id>/invite/<user_id>", format = "application/json")]
+#[get("/<session_id>/deny/<user_id>", format = "application/json")]
+pub fn deny_to_session(
+    auth: Result<Auth, JsonValue>,
+    session_id: i32,
+    user_id: i32,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(auth) => {
+            let session_details =
+                session::Session::find(session_id, &connection).map_err(|response| response)?;
+
+            if auth.id == session_details.dm {
+                session::Session::remove_user(&session_details, user_id, &connection)
+                    .map(|_| ApiResponse {
+                        json: json!({ "message": "successfully denied user to session" }),
+                        status: Status::Ok,
+                    })
+                    .map_err(|response| response)
+            } else {
+                Err(ApiResponse {
+                    json: json!({ "error": "you are not the DM" }),
+                    status: Status::Unauthorized,
+                })
+            }
+        }
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
+#[get("/<session_id>/invite/<user_id>", format = "application/json", rank = 2)]
 pub fn invite_to_session(
     auth: Result<Auth, JsonValue>,
     session_id: i32,
@@ -448,7 +481,7 @@ pub fn invite_to_session(
             let session_details =
                 session::Session::find(session_id, &connection).map_err(|response| response)?;
             if auth.id == session_details.dm {
-                session::Session::invite_to_join(session_details.id, user_id, &connection)
+                session::Session::invite_to_join(session_details.id, user_id, session_details.group_id, &connection)
                     .map(|_| ApiResponse {
                         json: json!({ "message": "invited user to join session successfully" }),
                         status: Status::Ok,
@@ -468,7 +501,7 @@ pub fn invite_to_session(
     }
 }
 
-#[get("/<session_id>/accept_invite", format = "application/json")]
+#[get("/<session_id>/invite/accept", format = "application/json")]
 pub fn accept_invite_to_session(
     auth: Result<Auth, JsonValue>,
     session_id: i32,
@@ -494,7 +527,56 @@ pub fn accept_invite_to_session(
     }
 }
 
-#[delete("/<session_id>/leave", format = "application/json")]
+#[get("/<session_id>/invite/deny", format = "application/json")]
+pub fn deny_invite_to_session(
+    auth: Result<Auth, JsonValue>,
+    session_id: i32,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(auth) => {
+            // get error if there is any (i.e. session does not exist)
+            let session_details =
+                session::Session::find(session_id, &connection).map_err(|response| response)?;
+
+            session::Session::remove_user(&session_details, auth.id, &connection)
+                .map(|_| ApiResponse {
+                    json: json!({ "message": "Denied invite to session successfully" }),
+                    status: Status::Ok,
+                })
+                .map_err(|response| response)
+        }
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
+#[get("/<session_id>/waiting/<user_id>", format = "application/json")]
+pub fn is_user_waiting_to_join(
+    auth: Result<Auth, JsonValue>,
+    session_id: i32,
+    user_id: i32,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(_auth) => {
+            session::Session::is_user_waiting_to_join(session_id, user_id, &connection)
+                .map(|is_waiting| ApiResponse {
+                    json: json!({ "waiting": is_waiting }),
+                    status: Status::Ok,
+                })
+                .map_err(|response| response)
+        }
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
+#[delete("/<session_id>/leave")]
 pub fn leave_session(
     auth: Result<Auth, JsonValue>,
     session_id: i32,
@@ -560,7 +642,7 @@ pub fn delete_session(
     }
 }
 
-#[delete("/<session_id>/remove/<user_id>", format = "application/json")]
+#[delete("/<session_id>/remove/<user_id>")]
 pub fn remove_user_from_session(
     auth: Result<Auth, JsonValue>,
     session_id: i32,

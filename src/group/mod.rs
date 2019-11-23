@@ -15,8 +15,6 @@ use crate::database::dsl;
 
 use crate::database::Paginate;
 
-use itertools::Itertools;
-
 #[table_name = "groups"]
 #[derive(
     Debug, Identifiable, AsChangeset, Serialize, Deserialize, Queryable, Clone, PartialEq, Eq, Hash,
@@ -83,8 +81,9 @@ pub struct UpdateGroupUser {
 pub struct FindGroups {
     global_search: Option<bool>,
     name: Option<String>,
-    limit: Option<i64>,
-    page: Option<i64>,
+    pub limit: Option<i64>,
+    pub page: Option<i64>,
+    order: Option<String>,
 }
 
 impl Group {
@@ -108,23 +107,40 @@ impl Group {
         params: &FindGroups,
         user_id: i32,
         connection: &PgConnection,
-    ) -> Result<(Vec<Group>, i64), ApiResponse> {
+    ) -> Result<(Vec<GroupJson>, i64), ApiResponse> {
         if params.global_search.unwrap_or(false) {
             //get all groups regardless of what groups the current user is in
 
-            let mut query = groups::table.select(groups::all_columns).into_boxed();
+            let mut pages_count: i64 = 0;
+
+            let mut query = groups::table
+                .inner_join(users::table) // admin details
+                .select((groups::all_columns, users::all_columns))
+                .into_boxed();
 
             if let Some(ref name) = params.name {
                 query = query
                     .filter(dsl::similar_to(groups::name, name))
                     .order(dsl::similarity(groups::name, name).desc())
-            }
+            } else if let Some(ref order) = params.order {
+                    match order.to_lowercase().as_ref() {
+                        "asc" => query = query
+                        .order(groups::name.asc()),
+                        "desc" => query = query
+                        .order(groups::name.desc()),
+                        _ => query = query
+                        .order(groups::name.asc())
+                    }
+                } else {
+                    // default to asc
+                    query = query
+                        .order(groups::name.asc())
+                }
 
             query
                 .paginate(params.page.unwrap_or(1))
                 .per_page(params.limit.unwrap_or(DEFAULT_LIMIT))
-                .load_and_count_pages::<Group>(connection)
-                .map(|(groups, pages_count)| (groups, pages_count))
+                .load_and_count_pages::<(Group, User)>(connection)
                 .map_err(|error| {
                     println!("Error: {:#?}", error);
                     ApiResponse {
@@ -132,36 +148,69 @@ impl Group {
                         status: Status::NotFound,
                     }
                 })
+                .map(|(groups_and_admins, count)| {
+                        pages_count += count;
+                        groups_and_admins
+                })?
+                .iter()
+                .map(|(group, admin)| populate(group, admin.to_profile(), connection))
+                .collect::<Result<Vec<_>, _>>()
+                .map(|group_jsons| {
+                    (group_jsons, pages_count)
+                })
         } else {
-
             // get all groups belonging to the current user
+
+            let mut pages_count: i64 = 0;
 
             let user = User::find(user_id, connection).map_err(|response| response)?;
 
             let mut query = GroupUser::belonging_to(&user)
                 .filter(groups_users::columns::admin_accepted.eq(true))
                 .filter(groups_users::columns::user_accepted.eq(true))
-                .inner_join(groups::table)
-                .select(groups::all_columns)
+                .inner_join(groups::table.inner_join(users::table))
+                .select((groups::all_columns, users::all_columns))
                 .into_boxed();
 
             if let Some(ref name) = params.name {
                 query = query
                     .filter(dsl::similar_to(groups::name, name))
                     .order(dsl::similarity(groups::name, name).desc())
-            }
+            } else if let Some(ref order) = params.order {
+                    match order.to_lowercase().as_ref() {
+                        "asc" => query = query
+                        .order(groups::name.asc()),
+                        "desc" => query = query
+                        .order(groups::name.desc()),
+                        _ => query = query
+                        .order(groups::name.asc())
+                    }
+                } else {
+                    // default to asc
+                    query = query
+                        .order(groups::name.asc())
+                }
 
             query
                 .paginate(params.page.unwrap_or(1))
                 .per_page(params.limit.unwrap_or(DEFAULT_LIMIT))
-                .load_and_count_pages::<Group>(connection)
-                .map(|(groups, pages_count)| (groups.into_iter().unique_by(|group| group.id).collect(), pages_count))
+                .load_and_count_pages::<(Group, User)>(connection)
                 .map_err(|error| {
                     println!("Error: {:#?}", error);
                     ApiResponse {
                         json: json!({"error": "Groups not found" }),
                         status: Status::NotFound,
                     }
+                })
+                .map(|(groups_and_admins, count)| {
+                        pages_count += count;
+                        groups_and_admins
+                })?
+                .iter()
+                .map(|(group, admin)| populate(group, admin.to_profile(), connection))
+                .collect::<Result<Vec<_>, _>>()
+                .map(|group_jsons| {
+                    (group_jsons, pages_count)
                 })
         }
     }
@@ -321,6 +370,30 @@ impl Group {
             })?;
 
         Ok(())
+    }
+
+pub fn is_user_waiting_to_join(
+        group_id: i32,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<bool, ApiResponse> {
+        groups_users::table
+            .find((group_id, user_id))
+            .select((
+                groups_users::columns::admin_accepted,
+                groups_users::columns::user_accepted,
+            ))
+            .get_result::<(bool, bool)>(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "Group/User not found", "details": error.to_string() }),
+                    status: Status::NotFound,
+                }
+            })
+            // return ! because we want if still waiting, if they are accepted they are
+            // not waiting
+            .map(|(admin_accepted, user_accepted)| !(admin_accepted && user_accepted))
     }
 
     pub fn remove_user(

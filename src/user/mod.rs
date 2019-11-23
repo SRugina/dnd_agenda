@@ -1,10 +1,13 @@
 use crate::schema::sessions;
 use crate::schema::users;
+use crate::schema::sessions_users;
 use diesel::prelude::*;
+
+use rocket_contrib::json::JsonValue;
 
 use bcrypt::{hash, verify, DEFAULT_COST};
 
-use crate::group::{Group, GroupUser};
+use crate::group::{self, Group, GroupUser};
 use crate::schema::{groups, groups_users};
 
 use crate::api::ApiResponse;
@@ -45,10 +48,12 @@ pub struct FindUsers {
     username: Option<String>,
     limit: Option<i64>,
     page: Option<i64>,
+    order: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct UserAuth<'a> {
+    id: i32,
     username: &'a str,
     email: &'a str,
     bio: Option<&'a str>,
@@ -74,6 +79,7 @@ impl User {
         .token();
 
         UserAuth {
+            id: self.id,
             username: &self.username,
             email: &self.email,
             bio: self.bio.as_ref().map(String::as_str),
@@ -163,7 +169,20 @@ impl User {
                 query = query
                     .filter(dsl::similar_to(users::username, username))
                     .order(dsl::similarity(users::username, username).desc())
-            }
+            } else if let Some(ref order) = params.order {
+                    match order.to_lowercase().as_ref() {
+                        "asc" => query = query
+                        .order(users::username.asc()),
+                        "desc" => query = query
+                        .order(users::username.desc()),
+                        _ => query = query
+                        .order(users::username.asc())
+                    }
+                } else {
+                    // default to asc
+                    query = query
+                        .order(users::username.asc())
+                }
 
             query
                 .paginate(params.page.unwrap_or(1))
@@ -275,35 +294,146 @@ impl User {
             })
     }
 
-    pub fn read_sessions(
+    /// read the requests sent by other users to join this user's sessions
+    pub fn read_sessions_requests(
+        params: &session::FindSessions,
         user_id: i32,
         connection: &PgConnection,
-    ) -> Result<Vec<session::SessionJson>, ApiResponse> {
-        let user = User::find(user_id, connection).map_err(|response| response)?;
-
-        session::SessionUser::belonging_to(&user)
-            .inner_join(sessions::table)
-            .select(sessions::all_columns)
-            .order(sessions::session_date.desc())
-            .load::<session::Session>(connection)
+    ) -> Result<(Vec<JsonValue>, i64), ApiResponse> {
+        sessions_users::table
+            .filter(sessions_users::columns::dm_accepted.eq(false)
+                .and(sessions_users::columns::user_accepted.eq(true))
+            )
+            .inner_join(sessions::table.inner_join(users::table)) //get dm details
+            .filter(users::columns::id.eq(user_id)) // only dm that is this user
+            .select((sessions_users::columns::session_id, sessions::slug, sessions::title, sessions_users::columns::user_id))
+            .paginate(params.page.unwrap_or(1))
+            .per_page(params.limit.unwrap_or(DEFAULT_LIMIT))
+            .load_and_count_pages::<(i32, String, String, i32)>(connection)
             .map_err(|error| {
                 println!("Error: {:#?}", error);
                 ApiResponse {
                     json: json!({"error": "Sessions not found" }),
                     status: Status::NotFound,
                 }
-            })?
-            .iter()
-            .map(|session| {
-                let dm = User::find(session.dm, connection)
-                    .map(|user| user.to_profile())
-                    .map_err(|response| response)?;
-
-                session::populate(&session, dm, connection)
-                    .map(|session_json| session_json)
-                    .map_err(|response| response)
             })
-            .collect()
+            .map(|(session_id_slug_title_user_id, count)| {
+                (session_id_slug_title_user_id
+                    .into_iter()
+                    .map(|(session_id, slug, title, user_id)| {
+                        let user = User::find(user_id, connection).map_err(|response| response).unwrap();
+                        json!({ "id": session_id, "slug": slug, "title": title, "profile": user.to_profile() })
+                    })
+                    .collect()
+                , count)
+            })
+    }
+
+    /// read the invites received from other users to join their sessions
+    pub fn read_sessions_invites(
+        params: &session::FindSessions,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<(Vec<JsonValue>, i64), ApiResponse> {
+
+        sessions_users::table
+            .filter(sessions_users::columns::dm_accepted.eq(true)
+                .and(sessions_users::columns::user_accepted.eq(false))
+                .and(sessions_users::columns::user_id.eq(user_id))
+            )
+            .inner_join(sessions::table.inner_join(users::table)) //get dm details
+            .select((sessions_users::columns::session_id, sessions::slug, sessions::title, users::id))
+            .paginate(params.page.unwrap_or(1))
+            .per_page(params.limit.unwrap_or(DEFAULT_LIMIT))
+            .load_and_count_pages::<(i32, String, String, i32)>(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "Sessions not found" }),
+                    status: Status::NotFound,
+                }
+            })
+            .map(|(session_id_slug_title_user_id, count)| {
+                (session_id_slug_title_user_id
+                    .into_iter()
+                    .map(|(session_id, slug, title, user_id)| {
+                        let user = User::find(user_id, connection).map_err(|response| response).unwrap();
+                        json!({ "id": session_id, "slug": slug, "title": title, "profile": user.to_profile() })
+                    })
+                    .collect()
+                , count)
+            })
+    }
+
+    /// read the requests sent by other users to join this user's groups
+    pub fn read_groups_requests(
+        params: &group::FindGroups,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<(Vec<JsonValue>, i64), ApiResponse> {
+        groups_users::table
+            .filter(groups_users::columns::admin_accepted.eq(false)
+                .and(groups_users::columns::user_accepted.eq(true))
+            )
+            .inner_join(groups::table.inner_join(users::table)) //get admin details
+            .filter(users::columns::id.eq(user_id)) // only admin that is this user
+            .select((groups_users::columns::group_id, groups::slug, groups::name, groups_users::columns::user_id))
+            .paginate(params.page.unwrap_or(1))
+            .per_page(params.limit.unwrap_or(DEFAULT_LIMIT))
+            .load_and_count_pages::<(i32, String, String, i32)>(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "Groups not found" }),
+                    status: Status::NotFound,
+                }
+            })
+            .map(|(group_id_slug_name_user_id, count)| {
+                (group_id_slug_name_user_id
+                    .into_iter()
+                    .map(|(group_id, slug, name, user_id)| {
+                        let user = User::find(user_id, connection).map_err(|response| response).unwrap();
+                        json!({ "id": group_id, "slug": slug, "name": name, "profile": user.to_profile() })
+                    })
+                    .collect()
+                , count)
+            })
+    }
+
+    /// read the invites received from other users to join their sessions
+    pub fn read_groups_invites(
+        params: &group::FindGroups,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<(Vec<JsonValue>, i64), ApiResponse> {
+
+        groups_users::table
+            .filter(groups_users::columns::admin_accepted.eq(true)
+                .and(groups_users::columns::user_accepted.eq(false))
+                .and(groups_users::columns::user_id.eq(user_id))
+            )
+            .inner_join(groups::table.inner_join(users::table)) //get admin details
+            .select((groups_users::columns::group_id, groups::slug, groups::name, users::id))
+            .paginate(params.page.unwrap_or(1))
+            .per_page(params.limit.unwrap_or(DEFAULT_LIMIT))
+            .load_and_count_pages::<(i32, String, String, i32)>(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "Sessions not found" }),
+                    status: Status::NotFound,
+                }
+            })
+            .map(|(group_id_slug_name_user_id, count)| {
+                (group_id_slug_name_user_id
+                    .into_iter()
+                    .map(|(group_id, slug, name, user_id)| {
+                        let user = User::find(user_id, connection).map_err(|response| response).unwrap();
+                        json!({ "id": group_id, "slug": slug, "name": name, "profile": user.to_profile() })
+                    })
+                    .collect()
+                , count)
+            })
     }
 
     pub fn delete(user_id: i32, connection: &PgConnection) -> Result<(), ApiResponse> {

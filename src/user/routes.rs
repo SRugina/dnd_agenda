@@ -15,6 +15,9 @@ use crate::api::FieldValidator;
 use bcrypt::{hash, DEFAULT_COST};
 use validator::Validate;
 
+use crate::session::FindSessions;
+use crate::group::FindGroups;
+
 #[get("/?<params..>")]
 pub fn get_all(
     auth: Result<Auth, JsonValue>,
@@ -54,24 +57,83 @@ pub fn get_self(
     }
 }
 
-#[get("/<user_id>/sessions")]
-pub fn get_sessions(
+#[get("/self/sessions/requests?<params..>")]
+pub fn get_sessions_requests(
     auth: Result<Auth, JsonValue>,
-    user_id: i32,
+    params: Form<FindSessions>,
     connection: DnDAgendaDB,
-) -> ApiResponse {
+) -> Result<ApiResponse, ApiResponse> {
     match auth {
-        Ok(_auth) => match user::User::read_sessions(user_id, &connection) {
-            Ok(sessions) => ApiResponse {
-                json: json!({ "sessions": sessions }),
+        Ok(auth) => user::User::read_sessions_requests(&params, auth.id, &connection)
+            .map(|(session_requests, pages_count)| ApiResponse {
+                json: json!({ "sessionRequests": session_requests, "sessionRequestsPagesCount": pages_count }),
                 status: Status::Ok,
-            },
-            Err(response) => response,
-        },
-        Err(auth_error) => ApiResponse {
+            })
+            .map_err(|response| response),
+        Err(auth_error) => Err(ApiResponse {
             json: auth_error,
             status: Status::Unauthorized,
-        },
+        }),
+    }
+}
+
+#[get("/self/sessions/invites?<params..>")]
+pub fn get_sessions_invites(
+    auth: Result<Auth, JsonValue>,
+    params: Form<FindSessions>,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(auth) => user::User::read_sessions_invites(&params, auth.id, &connection)
+            .map(|(session_invites, pages_count)| ApiResponse {
+                json: json!({ "sessionInvites": session_invites, "sessionInvitesPagesCount": pages_count }),
+                status: Status::Ok,
+            })
+            .map_err(|response| response),
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
+#[get("/self/groups/requests?<params..>")]
+pub fn get_groups_requests(
+    auth: Result<Auth, JsonValue>,
+    params: Form<FindGroups>,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(auth) => user::User::read_groups_requests(&params, auth.id, &connection)
+            .map(|(group_requests, pages_count)| ApiResponse {
+                json: json!({ "groupRequests": group_requests, "groupRequestsPagesCount": pages_count }),
+                status: Status::Ok,
+            })
+            .map_err(|response| response),
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
+    }
+}
+
+#[get("/self/groups/invites?<params..>")]
+pub fn get_groups_invites(
+    auth: Result<Auth, JsonValue>,
+    params: Form<FindGroups>,
+    connection: DnDAgendaDB,
+) -> Result<ApiResponse, ApiResponse> {
+    match auth {
+        Ok(auth) => user::User::read_groups_invites(&params, auth.id, &connection)
+            .map(|(group_invites, pages_count)| ApiResponse {
+                json: json!({ "groupInvites": group_invites, "groupInvitesPagesCount": pages_count }),
+                status: Status::Ok,
+            })
+            .map_err(|response| response),
+        Err(auth_error) => Err(ApiResponse {
+            json: auth_error,
+            status: Status::Unauthorized,
+        }),
     }
 }
 
