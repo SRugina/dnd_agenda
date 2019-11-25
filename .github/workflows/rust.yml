@@ -35,7 +35,6 @@ jobs:
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Cargo build
-      if: steps.cache.outputs.cache-hit != 'true'
       run: cargo +nightly build --release
 
     - name: Deploy
