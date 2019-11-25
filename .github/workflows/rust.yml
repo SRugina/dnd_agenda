@@ -16,7 +16,6 @@ jobs:
         default: true
 
     - name: Cache cargo registry
-      id: cache
       uses: actions/cache@v1
       with:
         path: ~/.cargo/registry
@@ -29,16 +28,14 @@ jobs:
         key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Cache cargo build
+      id: cache
       uses: actions/cache@v1
       with:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
-    - name: Cargo install dependencies
-      if: steps.cache.outputs.cache-hit != 'true'
-      run: cargo install
-
     - name: Cargo build
+      if: steps.cache.outputs.cache-hit != 'true'
       run: cargo +nightly build --release
 
     - name: Deploy
