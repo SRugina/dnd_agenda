@@ -8,6 +8,13 @@ jobs:
     steps:
     - uses: actions/checkout@v1
 
+    - name: Install Rust Nightly
+      uses: actions-rs/toolchain@v1.0.3
+      with:
+        toolchain: nightly
+        profile: minimal
+        default: true
+
     - name: Cache cargo registry
       id: cache
       uses: actions/cache@v1
@@ -27,8 +34,11 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
-    - name: Cargo build
+    - name: Cargo install dependencies
       if: steps.cache.outputs.cache-hit != 'true'
+      run: cargo install
+
+    - name: Cargo build
       run: cargo +nightly build --release
 
     - name: Deploy
