@@ -1,0 +1,39 @@
+name: Deploy
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+
+    - name: Cache cargo registry
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/registry
+        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo index
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/git
+        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache cargo build
+      uses: actions/cache@v1
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cargo build
+      run: cargo +nightly build --release
+
+    - name: Deploy
+      run: |
+        SSHPATH="$HOME/.ssh"
+        mkdir "$SSHPATH"
+        echo "${{ secrets.KEY }}" > "$SSHPATH/key"
+        chmod 600 "$SSHPATH/key"
+        SERVER_DEPLOY_STRING="ubuntu@18.130.241.28:/home/ubuntu/dndearall"
+        sh -c "rsync -rltgoDzvO --delete -e 'ssh -i $SSHPATH/key -o StrictHostKeyChecking=no -p 22' $GITHUB_WORKSPACE/target/dnd_agenda $SERVER_DEPLOY_STRING"
