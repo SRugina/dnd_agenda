@@ -42,9 +42,6 @@ jobs:
   
     - name: Prepare Rocket.toml file
       run: cp "$GITHUB_WORKSPACE/Rocket.toml.example" "$GITHUB_WORKSPACE/Rocket.toml"
-  
-    - name: Test ls
-      run: ls "$GITHUB_WORKSPACE/"
 
     - name: Cargo build
       run: cargo +nightly build --release
@@ -56,4 +53,4 @@ jobs:
         echo "${{ secrets.KEY }}" > "$SSHPATH/key"
         chmod 600 "$SSHPATH/key"
         SERVER_DEPLOY_STRING="${{ secrets.USERNAME }}@${{ secrets.HOST }}:${{ secrets.TARGET }}"
-        sh -c "rsync -rltgoDzvO --delete -e 'ssh -i $SSHPATH/key -o StrictHostKeyChecking=no -p 22' $GITHUB_WORKSPACE/target/release/dnd_agenda $SERVER_DEPLOY_STRING"
+        sh -c "rsync -rltgoDzvO --delete -e 'ssh -i $SSHPATH/key -o StrictHostKeyChecking=no -p 22' $GITHUB_WORKSPACE/init.sql $GITHUB_WORKSPACE/migrations $GITHUB_WORKSPACE/target/release/dnd_agenda $SERVER_DEPLOY_STRING"
