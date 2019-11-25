@@ -1,2 +1,0 @@
-[global.databases]
-dnd_agenda = { url = "postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda" }

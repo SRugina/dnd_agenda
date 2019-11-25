@@ -38,6 +38,7 @@ pub struct Session {
     pub dm: i32,
     pub session_date: DateTime<Utc>,
     pub colour: String,
+    pub image: Option<String>,
     pub group_id: i32,
 }
 
@@ -132,23 +133,19 @@ impl Session {
                         .order(sessions::session_date.asc())
                 } else if let Some(ref order) = params.order {
                     match order.to_lowercase().as_ref() {
-                        "asc" => query = query
-                        .order(sessions::session_date.asc()),
-                        "desc" => query = query
-                        .order(sessions::session_date.desc()),
-                        _ => query = query
-                        .order(sessions::session_date.asc())
+                        "asc" => query = query.order(sessions::session_date.asc()),
+                        "desc" => query = query.order(sessions::session_date.desc()),
+                        _ => query = query.order(sessions::session_date.asc()),
                     }
                 } else {
                     // default to asc
-                    query = query
-                        .order(sessions::session_date.asc())
+                    query = query.order(sessions::session_date.asc())
                 }
 
                 if let Some(ref title) = params.title {
-                query = query
-                    .filter(dsl::similar_to(sessions::title, title))
-                    .order(dsl::similarity(sessions::title, title).desc())
+                    query = query
+                        .filter(dsl::similar_to(sessions::title, title))
+                        .order(dsl::similarity(sessions::title, title).desc())
                 }
 
                 query
@@ -172,11 +169,14 @@ impl Session {
             })
             .collect::<Result<Vec<_>, _>>()
             .map(|session_jsons| {
-                (session_jsons
-                    .into_iter()
-                    .flatten()
-                    .unique_by(|session_json| session_json.id)
-                    .collect(), pages_count)
+                (
+                    session_jsons
+                        .into_iter()
+                        .flatten()
+                        .unique_by(|session_json| session_json.id)
+                        .collect(),
+                    pages_count,
+                )
             })
     }
 
@@ -349,9 +349,9 @@ impl Session {
     ) -> Result<(), ApiResponse> {
         if !GroupUser::check_user_in_group(group_id, user_id, connection)? {
             return Err(ApiResponse {
-                    json: json!({"error": "User not in the same group as the session" }),
-                    status: Status::InternalServerError,
-                })
+                json: json!({"error": "User not in the same group as the session" }),
+                status: Status::InternalServerError,
+            });
         }
         let new_session_user = &InsertableSessionUser {
             session_id,

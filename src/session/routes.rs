@@ -702,7 +702,7 @@ pub fn get_guest_link(
                         json: json!({
                             "guest_link":
                                 format!(
-                                    "http://localhost:8000/#/session/{}?guest={}",
+                                    "https://dndearall.com/#/session/{}?guest={}",
                                     session_details.slug, guest_token
                                 )
                         }),

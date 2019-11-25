@@ -1,0 +1,7 @@
+[global.databases]
+dnd_agenda = { url = "postgres://dnd_agenda:dnd_agenda@localhost/dnd_agenda" }
+
+[production]
+address = "127.0.0.1"
+port = 8000
+secret_key = "2VsXApb7A3yKgMNtm86ngbsYJptvDY2/q0lU9EwD2cw="

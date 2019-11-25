@@ -11,6 +11,10 @@ extern crate serde_derive;
 extern crate diesel;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate dotenv_codegen;
+
+use dotenv::dotenv;
 
 #[macro_use]
 extern crate validator_derive;
@@ -28,6 +32,7 @@ mod session;
 mod user;
 
 pub fn rocket() -> rocket::Rocket {
+    dotenv().ok();
     rocket::ignite()
         .mount(
             "/api/v1/users",

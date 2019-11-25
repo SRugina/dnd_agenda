@@ -4,6 +4,7 @@ table! {
         slug -> Text,
         name -> Text,
         description -> Text,
+        image -> Nullable<Text>,
         admin -> Int4,
     }
 }
@@ -26,6 +27,7 @@ table! {
         dm -> Int4,
         session_date -> Timestamptz,
         colour -> Text,
+        image -> Nullable<Text>,
         group_id -> Int4,
     }
 }

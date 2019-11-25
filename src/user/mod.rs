@@ -1,6 +1,6 @@
 use crate::schema::sessions;
-use crate::schema::users;
 use crate::schema::sessions_users;
+use crate::schema::users;
 use diesel::prelude::*;
 
 use rocket_contrib::json::JsonValue;
@@ -17,8 +17,6 @@ use crate::api::Auth;
 use chrono::{Duration, Utc};
 
 use crate::session;
-
-type Url = String;
 
 pub mod routes;
 
@@ -37,7 +35,7 @@ pub struct User {
     pub username: String,
     pub email: String,
     pub bio: Option<String>,
-    pub image: Option<Url>,
+    pub image: Option<String>,
     #[serde(skip_serializing)]
     pub password: String,
 }
@@ -170,19 +168,15 @@ impl User {
                     .filter(dsl::similar_to(users::username, username))
                     .order(dsl::similarity(users::username, username).desc())
             } else if let Some(ref order) = params.order {
-                    match order.to_lowercase().as_ref() {
-                        "asc" => query = query
-                        .order(users::username.asc()),
-                        "desc" => query = query
-                        .order(users::username.desc()),
-                        _ => query = query
-                        .order(users::username.asc())
-                    }
-                } else {
-                    // default to asc
-                    query = query
-                        .order(users::username.asc())
+                match order.to_lowercase().as_ref() {
+                    "asc" => query = query.order(users::username.asc()),
+                    "desc" => query = query.order(users::username.desc()),
+                    _ => query = query.order(users::username.asc()),
                 }
+            } else {
+                // default to asc
+                query = query.order(users::username.asc())
+            }
 
             query
                 .paginate(params.page.unwrap_or(1))
@@ -257,11 +251,14 @@ impl User {
                 })
                 .collect::<Result<Vec<_>, _>>()
                 .map(|profiles| {
-                    (profiles
-                        .into_iter()
-                        .flatten()
-                        .unique_by(|profile| profile.id)
-                        .collect(), pages_count)
+                    (
+                        profiles
+                            .into_iter()
+                            .flatten()
+                            .unique_by(|profile| profile.id)
+                            .collect(),
+                        pages_count,
+                    )
                 })
         }
     }
@@ -335,7 +332,6 @@ impl User {
         user_id: i32,
         connection: &PgConnection,
     ) -> Result<(Vec<JsonValue>, i64), ApiResponse> {
-
         sessions_users::table
             .filter(sessions_users::columns::dm_accepted.eq(true)
                 .and(sessions_users::columns::user_accepted.eq(false))
@@ -406,7 +402,6 @@ impl User {
         user_id: i32,
         connection: &PgConnection,
     ) -> Result<(Vec<JsonValue>, i64), ApiResponse> {
-
         groups_users::table
             .filter(groups_users::columns::admin_accepted.eq(true)
                 .and(groups_users::columns::user_accepted.eq(false))

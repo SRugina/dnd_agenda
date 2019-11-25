@@ -4,5 +4,6 @@ CREATE TABLE groups (
     slug TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     description TEXT NOT NULL,
+    image TEXT,
     admin INTEGER NOT NULL REFERENCES users ON DELETE CASCADE
 )

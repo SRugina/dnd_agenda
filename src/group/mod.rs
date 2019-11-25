@@ -24,6 +24,7 @@ pub struct Group {
     pub slug: String,
     pub name: String,
     pub description: String,
+    pub image: Option<String>,
     pub admin: i32,
 }
 
@@ -123,19 +124,15 @@ impl Group {
                     .filter(dsl::similar_to(groups::name, name))
                     .order(dsl::similarity(groups::name, name).desc())
             } else if let Some(ref order) = params.order {
-                    match order.to_lowercase().as_ref() {
-                        "asc" => query = query
-                        .order(groups::name.asc()),
-                        "desc" => query = query
-                        .order(groups::name.desc()),
-                        _ => query = query
-                        .order(groups::name.asc())
-                    }
-                } else {
-                    // default to asc
-                    query = query
-                        .order(groups::name.asc())
+                match order.to_lowercase().as_ref() {
+                    "asc" => query = query.order(groups::name.asc()),
+                    "desc" => query = query.order(groups::name.desc()),
+                    _ => query = query.order(groups::name.asc()),
                 }
+            } else {
+                // default to asc
+                query = query.order(groups::name.asc())
+            }
 
             query
                 .paginate(params.page.unwrap_or(1))
@@ -149,15 +146,13 @@ impl Group {
                     }
                 })
                 .map(|(groups_and_admins, count)| {
-                        pages_count += count;
-                        groups_and_admins
+                    pages_count += count;
+                    groups_and_admins
                 })?
                 .iter()
                 .map(|(group, admin)| populate(group, admin.to_profile(), connection))
                 .collect::<Result<Vec<_>, _>>()
-                .map(|group_jsons| {
-                    (group_jsons, pages_count)
-                })
+                .map(|group_jsons| (group_jsons, pages_count))
         } else {
             // get all groups belonging to the current user
 
@@ -177,19 +172,15 @@ impl Group {
                     .filter(dsl::similar_to(groups::name, name))
                     .order(dsl::similarity(groups::name, name).desc())
             } else if let Some(ref order) = params.order {
-                    match order.to_lowercase().as_ref() {
-                        "asc" => query = query
-                        .order(groups::name.asc()),
-                        "desc" => query = query
-                        .order(groups::name.desc()),
-                        _ => query = query
-                        .order(groups::name.asc())
-                    }
-                } else {
-                    // default to asc
-                    query = query
-                        .order(groups::name.asc())
+                match order.to_lowercase().as_ref() {
+                    "asc" => query = query.order(groups::name.asc()),
+                    "desc" => query = query.order(groups::name.desc()),
+                    _ => query = query.order(groups::name.asc()),
                 }
+            } else {
+                // default to asc
+                query = query.order(groups::name.asc())
+            }
 
             query
                 .paginate(params.page.unwrap_or(1))
@@ -203,15 +194,13 @@ impl Group {
                     }
                 })
                 .map(|(groups_and_admins, count)| {
-                        pages_count += count;
-                        groups_and_admins
+                    pages_count += count;
+                    groups_and_admins
                 })?
                 .iter()
                 .map(|(group, admin)| populate(group, admin.to_profile(), connection))
                 .collect::<Result<Vec<_>, _>>()
-                .map(|group_jsons| {
-                    (group_jsons, pages_count)
-                })
+                .map(|group_jsons| (group_jsons, pages_count))
         }
     }
 
@@ -372,7 +361,7 @@ impl Group {
         Ok(())
     }
 
-pub fn is_user_waiting_to_join(
+    pub fn is_user_waiting_to_join(
         group_id: i32,
         user_id: i32,
         connection: &PgConnection,

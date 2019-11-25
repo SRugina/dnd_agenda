@@ -43,7 +43,7 @@ impl Auth {
         let payload = json!(self);
         jwt::encode(
             headers.0,
-            &config::SECRET.to_string(),
+            &config::JWT_SECRET.to_string(),
             &payload,
             jwt::Algorithm::HS256,
         )
@@ -89,7 +89,7 @@ fn extract_token_from_header(header: &str) -> Option<&str> {
 fn decode_token(token: &str) -> Option<Auth> {
     jwt::decode(
         token,
-        &config::SECRET.to_string(),
+        &config::JWT_SECRET.to_string(),
         jwt::Algorithm::HS256,
         &jwt::ValidationOptions::default(),
     )
@@ -119,7 +119,7 @@ impl GuestAuth {
         let payload = json!(self);
         jwt::encode(
             headers.0,
-            &config::SECRET.to_string(),
+            &config::JWT_SECRET.to_string(),
             &payload,
             jwt::Algorithm::HS256,
         )
@@ -131,7 +131,7 @@ impl GuestAuth {
     pub fn decode_guest_token(token: &str) -> Option<GuestAuth> {
         jwt::decode(
             token,
-            &config::SECRET.to_string(),
+            &config::JWT_SECRET.to_string(),
             jwt::Algorithm::HS256,
             &jwt::ValidationOptions::dangerous(),
         )
