@@ -75,11 +75,10 @@ jobs:
           diesel migration run
 
     - name: Reload Production
-      uses: appleboy/ssh-action@v0.0.2
+      uses: garygrossgarten/github-action-ssh@v0.3.0
       with:
         host: ${{ secrets.HOST }}
         username: ${{ secrets.USERNAME }}
-        key: ${{ secrets.KEY }}
-        port: 22
-        script: |
+        privateKey: ${{ secrets.KEY }}
+        command: |
           pm2 reload dnd_agenda --update-env
