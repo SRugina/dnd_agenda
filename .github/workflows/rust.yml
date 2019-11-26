@@ -37,6 +37,13 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
+    - name: Cache migrations
+      id: migrations-cache
+      uses: actions/cache@v1
+      with:
+        path: migrations
+        key: ${{ runner.os }}-migrations-${{ hashFiles('**/*.sql') }}
+
     - name: Prepare .env file
       run: echo "${{ secrets.ENV_FILE }}" > "$GITHUB_WORKSPACE/.env"
   
@@ -54,3 +61,25 @@ jobs:
         chmod 600 "$SSHPATH/key"
         SERVER_DEPLOY_STRING="${{ secrets.USERNAME }}@${{ secrets.HOST }}:${{ secrets.TARGET }}"
         sh -c "rsync -rltgoDzvO --delete -e 'ssh -i $SSHPATH/key -o StrictHostKeyChecking=no -p 22' $GITHUB_WORKSPACE/.env $GITHUB_WORKSPACE/migrations $GITHUB_WORKSPACE/target/release/dnd_agenda $SERVER_DEPLOY_STRING"
+
+    - name: Update Migrations
+      if: steps.migrations-cache.outputs.cache-hit != 'true'
+      uses: appleboy/ssh-action@v0.0.2
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.KEY }}
+        port: 22
+        script: |
+          cd ${{ secrets.TARGET }}
+          diesel migration run
+
+    - name: Reload Production
+      uses: appleboy/ssh-action@v0.0.2
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.KEY }}
+        port: 22
+        script: |
+          pm2 reload dnd_agenda
