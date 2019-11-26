@@ -82,4 +82,4 @@ jobs:
         key: ${{ secrets.KEY }}
         port: 22
         script: |
-          pm2 reload dnd_agenda
+          pm2 reload dnd_agenda --update-env
