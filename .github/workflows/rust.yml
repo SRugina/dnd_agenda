@@ -64,13 +64,13 @@ jobs:
 
     - name: Update Migrations
       if: steps.migrations-cache.outputs.cache-hit != 'true'
-      uses: appleboy/ssh-action@v0.0.2
+      uses: garygrossgarten/github-action-ssh@v0.3.0
       with:
         host: ${{ secrets.HOST }}
         username: ${{ secrets.USERNAME }}
-        key: ${{ secrets.KEY }}
+        privateKey: ${{ secrets.KEY }}
         port: 22
-        script: |
+        command: |
           cd ${{ secrets.TARGET }}
           diesel migration run
 

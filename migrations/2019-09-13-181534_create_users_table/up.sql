@@ -4,6 +4,6 @@ CREATE TABLE users (
     username TEXT NOT NULL UNIQUE,
     email TEXT NOT NULL UNIQUE,
     bio TEXT,
-    image TEXT DEFAULT 'https://i.ibb.co/F7gn5W9/smiley.jpg',
+    image TEXT DEFAULT 'https://dndearall.com/img/smiley.jpg',
     password TEXT NOT NULL
 )
