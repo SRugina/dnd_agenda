@@ -429,9 +429,31 @@ impl Session {
                     status: Status::NotFound,
                 }
             })
-            // return ! because we want if still waiting, if they are accepted they are
-            // not waiting
-            .map(|(dm_accepted, user_accepted)| !(dm_accepted && user_accepted))
+            // return !! to get boolean
+            .map(|(dm_accepted, user_accepted)| !!(dm_accepted == false && user_accepted == true))
+    }
+
+    pub fn is_user_invited(
+        session_id: i32,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<bool, ApiResponse> {
+        sessions_users::table
+            .find((session_id, user_id))
+            .select((
+                sessions_users::columns::dm_accepted,
+                sessions_users::columns::user_accepted,
+            ))
+            .get_result::<(bool, bool)>(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "Session/User not found", "details": error.to_string() }),
+                    status: Status::NotFound,
+                }
+            })
+            // return !! to get boolean
+            .map(|(dm_accepted, user_accepted)| !!(dm_accepted == true && user_accepted == false))
     }
 
     pub fn remove_user(
