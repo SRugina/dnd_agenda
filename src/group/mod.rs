@@ -380,9 +380,30 @@ impl Group {
                     status: Status::NotFound,
                 }
             })
-            // return ! because we want if still waiting, if they are accepted they are
-            // not waiting
-            .map(|(admin_accepted, user_accepted)| !(admin_accepted && user_accepted))
+            // return !! to get boolean
+            .map(|(admin_accepted, user_accepted)| !!(admin_accepted == false && user_accepted == true))
+    }
+    pub fn is_user_invited(
+        group_id: i32,
+        user_id: i32,
+        connection: &PgConnection,
+    ) -> Result<bool, ApiResponse> {
+        groups_users::table
+            .find((group_id, user_id))
+            .select((
+                groups_users::columns::admin_accepted,
+                groups_users::columns::user_accepted,
+            ))
+            .get_result::<(bool, bool)>(connection)
+            .map_err(|error| {
+                println!("Error: {:#?}", error);
+                ApiResponse {
+                    json: json!({"error": "Group/User not found", "details": error.to_string() }),
+                    status: Status::NotFound,
+                }
+            })
+            // return !! to get boolean
+            .map(|(admin_accepted, user_accepted)| !!(admin_accepted == true && user_accepted == false))
     }
 
     pub fn remove_user(
