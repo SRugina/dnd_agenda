@@ -22,6 +22,7 @@ pub mod functions {
 }
 
 pub mod helper_types {
+        #[allow(dead_code)]
         /// The return type of `similarity(expr, expr)`
         pub type Similarity<Expr1, Expr2> = super::functions::similarity::HelperType<Expr1, Expr2>;
 }
