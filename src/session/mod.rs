@@ -429,11 +429,11 @@ impl Session {
                     status: Status::NotFound,
                 }
             })
-            // return !! to get boolean
-            .map(|(dm_accepted, user_accepted)| !!(dm_accepted == false && user_accepted == true))
+            
+            .map(|(dm_accepted, user_accepted)| !dm_accepted && user_accepted)
     }
 
-    pub fn is_user_invited(
+    pub fn is_user_invited_to_join(
         session_id: i32,
         user_id: i32,
         connection: &PgConnection,
@@ -452,8 +452,7 @@ impl Session {
                     status: Status::NotFound,
                 }
             })
-            // return !! to get boolean
-            .map(|(dm_accepted, user_accepted)| !!(dm_accepted == true && user_accepted == false))
+            .map(|(dm_accepted, user_accepted)| dm_accepted && !user_accepted)
     }
 
     pub fn remove_user(

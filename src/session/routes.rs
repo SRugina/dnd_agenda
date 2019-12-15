@@ -577,7 +577,7 @@ pub fn is_user_waiting_to_join(
 }
 
 #[get("/<session_id>/invited/<user_id>", format = "application/json")]
-pub fn is_user_invited(
+pub fn is_user_invited_to_join(
     auth: Result<Auth, JsonValue>,
     session_id: i32,
     user_id: i32,
@@ -585,7 +585,7 @@ pub fn is_user_invited(
 ) -> Result<ApiResponse, ApiResponse> {
     match auth {
         Ok(_auth) => {
-            session::Session::is_user_invited(session_id, user_id, &connection)
+            session::Session::is_user_invited_to_join(session_id, user_id, &connection)
                 .map(|is_invited| ApiResponse {
                     json: json!({ "invited": is_invited }),
                     status: Status::Ok,

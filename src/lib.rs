@@ -74,6 +74,7 @@ pub fn rocket() -> rocket::Rocket {
                 session::routes::get_session_as_guest,
                 session::routes::get_guests,
                 session::routes::remove_guest_from_session,
+                session::routes::is_user_invited_to_join
             ],
         )
         .mount(
@@ -94,6 +95,7 @@ pub fn rocket() -> rocket::Rocket {
                 group::routes::is_user_waiting_to_join,
                 group::routes::leave_group,
                 group::routes::remove_user_from_group,
+                group::routes::is_user_invited_to_join
             ],
         )
         .attach(database::DnDAgendaDB::fairing())
