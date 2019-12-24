@@ -19,7 +19,7 @@ jobs:
       run: sudo apt install libpq-dev
     
     - name: Setup Postgres Server
-      run: docker exec -d postgres psql -f init.sql
+      run: docker exec postgres psql -f init.sql
     
     - name: Install Rust Nightly
       uses: actions-rs/toolchain@v1.0.3
