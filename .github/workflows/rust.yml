@@ -56,6 +56,11 @@ jobs:
     - name: Cargo build
       uses: actions-rs/cargo@v1.0.1
       with:
+        command: clean
+
+    - name: Cargo build
+      uses: actions-rs/cargo@v1.0.1
+      with:
         command: build
         args: --release
 
@@ -69,7 +74,7 @@ jobs:
         sh -c "rsync -rltgoDzvO --delete -e 'ssh -i $SSHPATH/key -o StrictHostKeyChecking=no -p 22' $GITHUB_WORKSPACE/.env $GITHUB_WORKSPACE/migrations $GITHUB_WORKSPACE/target/release/dnd_agenda $SERVER_DEPLOY_STRING"
 
     - name: Update Migrations
-      if: steps.migrations-cache.outputs.cache-hit != 'true'
+      #if: steps.migrations-cache.outputs.cache-hit != 'true'
       uses: garygrossgarten/github-action-ssh@v0.3.0
       with:
         host: ${{ secrets.HOST }}
@@ -87,7 +92,4 @@ jobs:
         username: ${{ secrets.USERNAME }}
         privateKey: ${{ secrets.KEY }}
         command: |
-          cd ${{ secrets.TARGET }}
-          ls
-          whereis pm2
-          pm2 reload dnd_agenda --update-env
+          ~/.yarn/bin/pm2 reload dnd_agenda --update-env
