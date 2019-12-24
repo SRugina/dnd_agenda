@@ -15,7 +15,7 @@ jobs:
       uses: SoftwareparkVeroo/postgresql-action@master
       with:
         postgresql version: latest
-        postgresql init scripts: ./init.sql
+        postgresql init scripts: .
     
     - name: Install Rust Nightly
       uses: actions-rs/toolchain@v1.0.3
