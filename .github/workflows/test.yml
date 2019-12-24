@@ -8,6 +8,9 @@ jobs:
     steps:
     - uses: actions/checkout@v1
     
+    - name: Install psql headers
+      run: sudo apt install libpq-dev
+    
     - name: Install Rust Nightly
       uses: actions-rs/toolchain@v1.0.3
       with:
@@ -40,10 +43,15 @@ jobs:
     - name: Prepare Rocket.toml file
       run: cp "$GITHUB_WORKSPACE/Rocket.toml.example" "$GITHUB_WORKSPACE/Rocket.toml"
 
+    - name: Cargo build
+      uses: actions-rs/cargo@v1.0.1
+      with:
+        command: build
+
     - uses: actions-rs/cargo@v1.0.1
       with:
         command: test
-        args: --all-features --no-fail-fast
+        args: --no-fail-fast
       env:
         CARGO_INCREMENTAL: '0'
         RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zno-landing-pads'
