@@ -78,6 +78,10 @@ jobs:
         port: 22
         command: |
           cd ${{ secrets.TARGET }}
+          echo $PATH
+          source ~/.bashrc
+          source ~/.profile
+          echo $PATH
           whereis diesel
           diesel migration run
 
@@ -88,6 +92,9 @@ jobs:
         username: ${{ secrets.USERNAME }}
         privateKey: ${{ secrets.KEY }}
         command: |
+          echo $PATH
+          source ~/.bashrc
+          source ~/.profile
           echo $PATH
           whereis node
           whereis pm2
