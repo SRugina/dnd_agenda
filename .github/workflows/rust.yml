@@ -88,5 +88,7 @@ jobs:
         username: ${{ secrets.USERNAME }}
         privateKey: ${{ secrets.KEY }}
         command: |
+          echo $PATH
+          whereis node
           whereis pm2
-          ~/.yarn/bin/pm2 reload dnd_agenda --update-env
+          pm2 reload dnd_agenda --update-env
