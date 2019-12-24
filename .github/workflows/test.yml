@@ -11,6 +11,12 @@ jobs:
     - name: Install psql headers
       run: sudo apt install libpq-dev
     
+    - name: Setup Postgres Server
+      uses: SoftwareparkVeroo/postgresql-action@master
+      with:
+        postgresql version: latest
+        postgresql init scripts: ./init.sql
+    
     - name: Install Rust Nightly
       uses: actions-rs/toolchain@v1.0.3
       with:
@@ -42,6 +48,15 @@ jobs:
   
     - name: Prepare Rocket.toml file
       run: cp "$GITHUB_WORKSPACE/Rocket.toml.example" "$GITHUB_WORKSPACE/Rocket.toml"
+
+    - name: Install diesel
+      uses: actions-rs/cargo@v1.0.1
+      with:
+        command: install
+        args: diesel_cli --no-default-features --features postgres
+    
+    - name: Run migrations
+      run: diesel migration run
 
     - name: Cargo build
       uses: actions-rs/cargo@v1.0.1
