@@ -56,11 +56,6 @@ jobs:
     - name: Cargo build
       uses: actions-rs/cargo@v1.0.1
       with:
-        command: clean
-
-    - name: Cargo build
-      uses: actions-rs/cargo@v1.0.1
-      with:
         command: build
         args: --release
 
@@ -83,6 +78,7 @@ jobs:
         port: 22
         command: |
           cd ${{ secrets.TARGET }}
+          whereis diesel
           diesel migration run
 
     - name: Reload Production
@@ -92,4 +88,5 @@ jobs:
         username: ${{ secrets.USERNAME }}
         privateKey: ${{ secrets.KEY }}
         command: |
+          whereis pm2
           ~/.yarn/bin/pm2 reload dnd_agenda --update-env
