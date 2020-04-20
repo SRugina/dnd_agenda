@@ -15,7 +15,11 @@ use crate::api::validate_user_exists;
 use crate::api::FieldValidator;
 use validator::Validate;
 
-use slug;
+use crate::mailgun::{send_mail, MailType};
+
+use crate::user::User;
+
+use std::thread;
 
 #[get("/?<params..>")]
 pub fn get_all(
@@ -386,9 +390,24 @@ pub fn invite_to_group(
                 group::Group::find(group_id, &connection).map_err(|response| response)?;
             if auth.id == group_details.admin {
                 group::Group::invite_to_join(group_details.id, user_id, &connection)
-                    .map(|_| ApiResponse {
-                        json: json!({ "message": "invited user to join group successfully" }),
-                        status: Status::Ok,
+                    .map(|_| {
+                        // since invite_to_join succeeded, the user and admin must exist
+                        let user = User::find(user_id, &connection).unwrap();
+                        let admin = User::find(group_details.admin, &connection).unwrap();
+
+                        thread::spawn(|| {
+                            send_mail(
+                                MailType::GroupInviteReceived,
+                                user,
+                                group_details.name,
+                                group_details.slug,
+                                admin,
+                            );
+                        });
+                        ApiResponse {
+                            json: json!({ "message": "invited user to join group successfully" }),
+                            status: Status::Ok,
+                        }
                     })
                     .map_err(|response| response)
             } else {
@@ -418,9 +437,24 @@ pub fn accept_invite_to_group(
                 group::Group::find(group_id, &connection).map_err(|response| response)?;
 
             group::Group::accept_invite_to_join(&group_details, auth.id, &connection)
-                .map(|_| ApiResponse {
-                    json: json!({ "message": "Joined group successfully" }),
-                    status: Status::Ok,
+                .map(|_| {
+                    // since accept_invite_to_join succeeded, the user and admin must exist
+                    let user = User::find(auth.id, &connection).unwrap();
+                    let admin = User::find(group_details.admin, &connection).unwrap();
+
+                    thread::spawn(|| {
+                        send_mail(
+                            MailType::GroupInviteAccepted,
+                            user,
+                            group_details.name,
+                            group_details.slug,
+                            admin,
+                        );
+                    });
+                    ApiResponse {
+                        json: json!({ "message": "Joined group successfully" }),
+                        status: Status::Ok,
+                    }
                 })
                 .map_err(|response| response)
         }
@@ -444,9 +478,24 @@ pub fn deny_invite_to_group(
                 group::Group::find(group_id, &connection).map_err(|response| response)?;
 
             group::Group::remove_user(&group_details, auth.id, &connection)
-                .map(|_| ApiResponse {
-                    json: json!({ "message": "Denied invite to group successfully" }),
-                    status: Status::Ok,
+                .map(|_| {
+                    // since remove_user succeeded, the user and admin must exist
+                    let user = User::find(auth.id, &connection).unwrap();
+                    let admin = User::find(group_details.admin, &connection).unwrap();
+
+                    thread::spawn(|| {
+                        send_mail(
+                            MailType::GroupInviteDeclined,
+                            user,
+                            group_details.name,
+                            group_details.slug,
+                            admin,
+                        );
+                    });
+                    ApiResponse {
+                        json: json!({ "message": "Denied invite to group successfully" }),
+                        status: Status::Ok,
+                    }
                 })
                 .map_err(|response| response)
         }
@@ -465,14 +514,12 @@ pub fn is_user_waiting_to_join(
     connection: DnDAgendaDB,
 ) -> Result<ApiResponse, ApiResponse> {
     match auth {
-        Ok(_auth) => {
-            group::Group::is_user_waiting_to_join(group_id, user_id, &connection)
-                .map(|is_waiting| ApiResponse {
-                    json: json!({ "waiting": is_waiting }),
-                    status: Status::Ok,
-                })
-                .map_err(|response| response)
-        }
+        Ok(_auth) => group::Group::is_user_waiting_to_join(group_id, user_id, &connection)
+            .map(|is_waiting| ApiResponse {
+                json: json!({ "waiting": is_waiting }),
+                status: Status::Ok,
+            })
+            .map_err(|response| response),
         Err(auth_error) => Err(ApiResponse {
             json: auth_error,
             status: Status::Unauthorized,
@@ -488,14 +535,12 @@ pub fn is_user_invited_to_join(
     connection: DnDAgendaDB,
 ) -> Result<ApiResponse, ApiResponse> {
     match auth {
-        Ok(_auth) => {
-            group::Group::is_user_invited_to_join(group_id, user_id, &connection)
-                .map(|is_invited| ApiResponse {
-                    json: json!({ "invited": is_invited }),
-                    status: Status::Ok,
-                })
-                .map_err(|response| response)
-        }
+        Ok(_auth) => group::Group::is_user_invited_to_join(group_id, user_id, &connection)
+            .map(|is_invited| ApiResponse {
+                json: json!({ "invited": is_invited }),
+                status: Status::Ok,
+            })
+            .map_err(|response| response),
         Err(auth_error) => Err(ApiResponse {
             json: auth_error,
             status: Status::Unauthorized,

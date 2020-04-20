@@ -1,61 +1,65 @@
+// TODO: remove once clippy allows disabling single_component_path_import within #[derive(...)]
+#![allow(clippy::single_component_path_imports)]
+
 use rocket_contrib::databases::diesel::PgConnection;
 #[database("dnd_agenda")]
 pub struct DnDAgendaDB(PgConnection);
 
 use crate::config;
-use diesel::prelude::*;
 use crate::config::DEFAULT_LIMIT;
+use diesel::prelude::*;
 
 pub fn establish_connection() -> PgConnection {
-        PgConnection::establish(config::DATABASE_URL)
-                .unwrap_or_else(|_| panic!("Error connecting to {}", config::DATABASE_URL))
+    PgConnection::establish(config::DATABASE_URL)
+        .unwrap_or_else(|_| panic!("Error connecting to {}", config::DATABASE_URL))
 }
 
 pub mod functions {
-        use diesel::sql_types::*;
+    use diesel::sql_types::*;
 
-        sql_function! {
-            /// Represents the `SIMILARITY` SQL function from pg_trgm
-            #[sql_name = "SIMILARITY"]
-            fn similarity(a: Text, b: Text) -> Float;
-        }
+    sql_function! {
+        /// Represents the `SIMILARITY` SQL function from pg_trgm
+        #[sql_name = "SIMILARITY"]
+        fn similarity(a: Text, b: Text) -> Float;
+    }
 }
 
 pub mod helper_types {
-        #[allow(dead_code)]
-        /// The return type of `similarity(expr, expr)`
-        pub type Similarity<Expr1, Expr2> = super::functions::similarity::HelperType<Expr1, Expr2>;
+    #[allow(dead_code)]
+    /// The return type of `similarity(expr, expr)`
+    pub type Similarity<Expr1, Expr2> = super::functions::similarity::HelperType<Expr1, Expr2>;
 }
 
 pub mod operators {
-        use diesel::pg::Pg;
+    use diesel::pg::Pg;
 
-        diesel_infix_operator!(SimilarTo, " %> ", backend: Pg);
+    
+    diesel_infix_operator!(SimilarTo, " %> ", backend: Pg);
 
-        use diesel::expression::AsExpression;
-        use diesel::prelude::*;
+    use diesel::expression::AsExpression;
+    use diesel::prelude::*;
 
-        // Normally you would put this on a trait instead.
+    // Normally you would put this on a trait instead.
 
-        /// usage: `.filter(similar_to(username, "bob"))`
-        pub fn similar_to<T, U>(left: T, right: U) -> SimilarTo<T, U::Expression>
-        where
-                T: Expression,
-                U: AsExpression<T::SqlType>,
-        {
-                SimilarTo::new(left, right.as_expression())
-        }
+    /// usage: `.filter(similar_to(username, "bob"))`
+    pub fn similar_to<T, U>(left: T, right: U) -> SimilarTo<T, U::Expression>
+    where
+        T: Expression,
+        U: AsExpression<T::SqlType>,
+    {
+        SimilarTo::new(left, right.as_expression())
+    }
 }
 
 pub mod dsl {
-        pub use super::functions::*;
-        pub use super::helper_types::*;
-        pub use super::operators::*;
+    pub use super::functions::*;
+    pub use super::helper_types::*;
+    pub use super::operators::*;
 }
 
-use diesel::query_dsl::methods::LoadQuery;
-use diesel::query_builder::*;
 use diesel::pg::Pg;
+use diesel::query_builder::*;
+use diesel::query_dsl::methods::LoadQuery;
 use diesel::sql_types::BigInt;
 
 pub trait Paginate: Sized {
@@ -71,6 +75,7 @@ impl<T> Paginate for T {
         }
     }
 }
+
 
 #[derive(Debug, Clone, Copy, QueryId)]
 pub struct Paginated<T> {

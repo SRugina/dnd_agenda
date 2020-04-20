@@ -21,9 +21,13 @@ use validator::Validate;
 
 use chrono::{DateTime, Utc};
 
-use slug;
+use std::thread;
 
 use regex::Regex;
+
+use crate::mailgun::{send_mail, MailType};
+
+use crate::user::User;
 
 lazy_static! {
     static ref SESSION_DATE_FORMAT: Regex =
@@ -468,7 +472,11 @@ pub fn deny_to_session(
     }
 }
 
-#[get("/<session_id>/invite/<user_id>", format = "application/json", rank = 2)]
+#[get(
+    "/<session_id>/invite/<user_id>",
+    format = "application/json",
+    rank = 2
+)]
 pub fn invite_to_session(
     auth: Result<Auth, JsonValue>,
     session_id: i32,
@@ -481,12 +489,32 @@ pub fn invite_to_session(
             let session_details =
                 session::Session::find(session_id, &connection).map_err(|response| response)?;
             if auth.id == session_details.dm {
-                session::Session::invite_to_join(session_details.id, user_id, session_details.group_id, &connection)
-                    .map(|_| ApiResponse {
+                session::Session::invite_to_join(
+                    session_details.id,
+                    user_id,
+                    session_details.group_id,
+                    &connection,
+                )
+                .map(|_| {
+                    // since invite_to_join succeeded, the user and dm must exist
+                    let user = User::find(user_id, &connection).unwrap();
+                    let dm = User::find(session_details.dm, &connection).unwrap();
+
+                    thread::spawn(|| {
+                        send_mail(
+                            MailType::SessionInviteReceived,
+                            user,
+                            session_details.title,
+                            session_details.slug,
+                            dm,
+                        );
+                    });
+                    ApiResponse {
                         json: json!({ "message": "invited user to join session successfully" }),
                         status: Status::Ok,
-                    })
-                    .map_err(|response| response)
+                    }
+                })
+                .map_err(|response| response)
             } else {
                 Err(ApiResponse {
                     json: json!({ "error": "you are not the DM" }),
@@ -514,9 +542,24 @@ pub fn accept_invite_to_session(
                 session::Session::find(session_id, &connection).map_err(|response| response)?;
 
             session::Session::accept_invite_to_join(&session_details, auth.id, &connection)
-                .map(|_| ApiResponse {
-                    json: json!({ "message": "Joined session successfully" }),
-                    status: Status::Ok,
+                .map(|_| {
+                    // since accept_invite_to_join succeeded, the user and dm must exist
+                    let user = User::find(auth.id, &connection).unwrap();
+                    let dm = User::find(session_details.dm, &connection).unwrap();
+
+                    thread::spawn(|| {
+                        send_mail(
+                            MailType::SessionInviteAccepted,
+                            user,
+                            session_details.title,
+                            session_details.slug,
+                            dm,
+                        );
+                    });
+                    ApiResponse {
+                        json: json!({ "message": "Joined session successfully" }),
+                        status: Status::Ok,
+                    }
                 })
                 .map_err(|response| response)
         }
@@ -540,9 +583,24 @@ pub fn deny_invite_to_session(
                 session::Session::find(session_id, &connection).map_err(|response| response)?;
 
             session::Session::remove_user(&session_details, auth.id, &connection)
-                .map(|_| ApiResponse {
-                    json: json!({ "message": "Denied invite to session successfully" }),
-                    status: Status::Ok,
+                .map(|_| {
+                    // since remove_user succeeded, the user and dm must exist
+                    let user = User::find(auth.id, &connection).unwrap();
+                    let dm = User::find(session_details.dm, &connection).unwrap();
+
+                    thread::spawn(|| {
+                        send_mail(
+                            MailType::SessionInviteDeclined,
+                            user,
+                            session_details.title,
+                            session_details.slug,
+                            dm,
+                        );
+                    });
+                    ApiResponse {
+                        json: json!({ "message": "Denied invite to session successfully" }),
+                        status: Status::Ok,
+                    }
                 })
                 .map_err(|response| response)
         }
@@ -561,14 +619,12 @@ pub fn is_user_waiting_to_join(
     connection: DnDAgendaDB,
 ) -> Result<ApiResponse, ApiResponse> {
     match auth {
-        Ok(_auth) => {
-            session::Session::is_user_waiting_to_join(session_id, user_id, &connection)
-                .map(|is_waiting| ApiResponse {
-                    json: json!({ "waiting": is_waiting }),
-                    status: Status::Ok,
-                })
-                .map_err(|response| response)
-        }
+        Ok(_auth) => session::Session::is_user_waiting_to_join(session_id, user_id, &connection)
+            .map(|is_waiting| ApiResponse {
+                json: json!({ "waiting": is_waiting }),
+                status: Status::Ok,
+            })
+            .map_err(|response| response),
         Err(auth_error) => Err(ApiResponse {
             json: auth_error,
             status: Status::Unauthorized,
@@ -584,14 +640,12 @@ pub fn is_user_invited_to_join(
     connection: DnDAgendaDB,
 ) -> Result<ApiResponse, ApiResponse> {
     match auth {
-        Ok(_auth) => {
-            session::Session::is_user_invited_to_join(session_id, user_id, &connection)
-                .map(|is_invited| ApiResponse {
-                    json: json!({ "invited": is_invited }),
-                    status: Status::Ok,
-                })
-                .map_err(|response| response)
-        }
+        Ok(_auth) => session::Session::is_user_invited_to_join(session_id, user_id, &connection)
+            .map(|is_invited| ApiResponse {
+                json: json!({ "invited": is_invited }),
+                status: Status::Ok,
+            })
+            .map_err(|response| response),
         Err(auth_error) => Err(ApiResponse {
             json: auth_error,
             status: Status::Unauthorized,

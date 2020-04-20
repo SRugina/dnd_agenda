@@ -1,3 +1,6 @@
+// TODO: remove once clippy allows disabling single_component_path_import within #[derive(...)]
+#![allow(clippy::single_component_path_imports)]
+
 use crate::schema::sessions;
 use crate::schema::sessions_users;
 use crate::schema::users;
@@ -80,8 +83,8 @@ impl User {
             id: self.id,
             username: &self.username,
             email: &self.email,
-            bio: self.bio.as_ref().map(String::as_str),
-            image: self.image.as_ref().map(String::as_str),
+            bio: self.bio.as_deref(),
+            image: self.image.as_deref(),
             token,
         }
     }
@@ -228,6 +231,15 @@ impl User {
                         query = query
                             .filter(dsl::similar_to(users::username, username))
                             .order(dsl::similarity(users::username, username).desc())
+                    } else if let Some(ref order) = params.order {
+                        match order.to_lowercase().as_ref() {
+                            "asc" => query = query.order(users::username.asc()),
+                            "desc" => query = query.order(users::username.desc()),
+                            _ => query = query.order(users::username.asc()),
+                        }
+                    } else {
+                        // default to asc
+                        query = query.order(users::username.asc())
                     }
 
                     query

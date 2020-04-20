@@ -4,7 +4,6 @@
 extern crate rocket;
 #[macro_use]
 extern crate rocket_contrib;
-use rocket_cors;
 #[macro_use]
 extern crate serde_derive;
 #[macro_use]
@@ -30,6 +29,8 @@ mod config;
 mod group;
 mod session;
 mod user;
+
+mod mailgun;
 
 pub fn rocket() -> rocket::Rocket {
     dotenv().ok();

@@ -15,8 +15,8 @@ use crate::api::FieldValidator;
 use bcrypt::{hash, DEFAULT_COST};
 use validator::Validate;
 
-use crate::session::FindSessions;
 use crate::group::FindGroups;
+use crate::session::FindSessions;
 
 #[get("/?<params..>")]
 pub fn get_all(

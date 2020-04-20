@@ -2,7 +2,6 @@
 
 //! This file contains utility functions used by all tests.
 
-use dnd_agenda;
 use once_cell::sync::OnceCell;
 use rocket::http::{ContentType, Header, Status};
 use rocket::local::{Client, LocalResponse};
@@ -83,6 +82,6 @@ pub fn register(client: &Client, username: &str, email: &str, password: &str) {
 
     match response.status() {
         Status::Created | Status::UnprocessableEntity => {} // ok,
-        status => panic!("Registration failed: {}", status),
+        status => panic!("Registration failed: {:#?}", status),
     }
 }

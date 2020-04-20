@@ -1,3 +1,6 @@
+// TODO: remove once clippy allows disabling single_component_path_import within #[derive(...)]
+#![allow(clippy::single_component_path_imports)]
+
 use crate::schema::sessions;
 use crate::schema::sessions_guests;
 use crate::schema::sessions_users;
@@ -429,7 +432,6 @@ impl Session {
                     status: Status::NotFound,
                 }
             })
-            
             .map(|(dm_accepted, user_accepted)| !dm_accepted && user_accepted)
     }
 

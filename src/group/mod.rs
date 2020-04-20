@@ -1,3 +1,6 @@
+// TODO: remove once clippy allows disabling single_component_path_import within #[derive(...)]
+#![allow(clippy::single_component_path_imports)]
+
 use crate::schema::{groups, groups_users, sessions, users};
 use diesel::prelude::*;
 
@@ -15,6 +18,7 @@ use crate::database::dsl;
 
 use crate::database::Paginate;
 
+
 #[table_name = "groups"]
 #[derive(
     Debug, Identifiable, AsChangeset, Serialize, Deserialize, Queryable, Clone, PartialEq, Eq, Hash,
@@ -27,6 +31,7 @@ pub struct Group {
     pub image: Option<String>,
     pub admin: i32,
 }
+
 
 #[table_name = "groups"]
 #[derive(Serialize, Deserialize, Insertable)]
@@ -49,6 +54,7 @@ pub struct GroupJson {
     pub sessions: Vec<Session>,
 }
 
+
 #[derive(Identifiable, Queryable, Debug, Associations, Serialize, Deserialize)]
 #[belongs_to(Group)]
 #[belongs_to(User)]
@@ -61,6 +67,7 @@ pub struct GroupUser {
     pub user_accepted: bool,
 }
 
+
 #[table_name = "groups_users"]
 #[derive(Serialize, Deserialize, Insertable, AsChangeset)]
 pub struct InsertableGroupUser {
@@ -71,6 +78,7 @@ pub struct InsertableGroupUser {
 }
 
 // TODO: remove clone when diesel will allow skipping fields
+
 #[derive(Deserialize, AsChangeset, Default, Clone)]
 #[table_name = "groups_users"]
 pub struct UpdateGroupUser {
@@ -380,7 +388,6 @@ impl Group {
                     status: Status::NotFound,
                 }
             })
-            
             .map(|(admin_accepted, user_accepted)| !admin_accepted && user_accepted)
     }
     pub fn is_user_invited_to_join(
@@ -510,6 +517,7 @@ impl InsertableGroup {
 }
 
 // TODO: remove clone when diesel will allow skipping fields
+
 #[derive(Deserialize, AsChangeset, Default, Clone)]
 #[table_name = "groups"]
 pub struct UpdateGroup {
